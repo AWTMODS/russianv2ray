@@ -5,7 +5,13 @@ let sessionCookie = null;
 
 const api = {
     login: async () => {
-        const loginUrl = `${process.env.PANEL_URL}/login`;
+        // Normalize URL: Remove trailing slash and '/panel' if present to get the true base
+        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
+        if (baseUrl.endsWith('/panel')) {
+            baseUrl = baseUrl.slice(0, -6); // Remove '/panel'
+        }
+
+        const loginUrl = `${baseUrl}/login`;
         console.log(`Attempting login to: ${loginUrl}`);
         try {
             const response = await axios.post(loginUrl, {
@@ -38,7 +44,13 @@ const api = {
     addClient: async (user, inboundId, expiryTime) => {
         if (!sessionCookie) await api.login();
 
-        const addClientUrl = `${process.env.PANEL_URL}/panel/api/inbounds/addClient`;
+        // Normalize URL again (should ideally be a helper, but repeating for safety in this scope)
+        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
+        if (baseUrl.endsWith('/panel')) {
+            baseUrl = baseUrl.slice(0, -6);
+        }
+
+        const addClientUrl = `${baseUrl}/panel/api/inbounds/addClient`;
 
         const clientData = {
             id: inboundId,
