@@ -5,8 +5,10 @@ let sessionCookie = null;
 
 const api = {
     login: async () => {
+        const loginUrl = `${process.env.PANEL_URL}/login`;
+        console.log(`Attempting login to: ${loginUrl}`);
         try {
-            const response = await axios.post(`${process.env.PANEL_URL}/login`, {
+            const response = await axios.post(loginUrl, {
                 username: process.env.PANEL_USERNAME,
                 password: process.env.PANEL_PASSWORD
             });
@@ -19,10 +21,11 @@ const api = {
                     return true;
                 }
             }
-            console.error('Login failed:', response.data);
+            console.error('Login failed logic:', response.data);
             return false;
         } catch (error) {
-            console.error('Login error:', error.message);
+            console.error(`Login error at ${loginUrl}:`, error.message);
+            if (error.response) console.error('Status:', error.response.status);
             return false;
         }
     },
@@ -34,6 +37,8 @@ const api = {
      */
     addClient: async (user, inboundId, expiryTime) => {
         if (!sessionCookie) await api.login();
+
+        const addClientUrl = `${process.env.PANEL_URL}/panel/api/inbounds/addClient`;
 
         const clientData = {
             id: inboundId,
@@ -52,7 +57,7 @@ const api = {
         };
 
         try {
-            const response = await axios.post(`${process.env.PANEL_URL}/panel/api/inbounds/addClient`, clientData, {
+            const response = await axios.post(addClientUrl, clientData, {
                 headers: {
                     'Cookie': sessionCookie,
                     'Content-Type': 'application/json'
@@ -63,14 +68,16 @@ const api = {
                 return { success: true, data: response.data };
             } else {
                 // If session expired, retry once
-                if (response.data.msg.includes('login')) {
+                if (response.data.msg && response.data.msg.includes('login')) {
+                    console.log('Session expired, retrying login...');
                     await api.login();
                     return api.addClient(user, inboundId, expiryTime);
                 }
                 return { success: false, msg: response.data.msg };
             }
         } catch (error) {
-            console.error('Error adding client:', error.message);
+            console.error(`Error adding client at ${addClientUrl}:`, error.message);
+            if (error.response) console.error('Status:', error.response.status);
             return { success: false, msg: error.message };
         }
     },
