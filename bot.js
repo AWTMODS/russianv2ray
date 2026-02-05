@@ -17,90 +17,150 @@ const getUser = async (ctx) => {
 // Start Command
 bot.start(async (ctx) => {
     try {
-        let user = await getUser(ctx);
-
-        if (!user) {
-            // New User: Create Trial
-            ctx.reply('Добро пожаловать в Portal! 👋Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.Чтобы начать:Нажмите кнопку «🔗 Подключиться» ниже.');
-
-            const uuid = uuidv4();
-            const email = `trial_${ctx.from.id}`;
-            const expiryTime = Date.now() + (2 * 24 * 60 * 60 * 1000); // 2 Days in ms
-
-            // Call Panel API
-            const result = await api.addClient(
-                { uuid, email },
-                parseInt(process.env.TRIAL_INBOUND_ID),
-                expiryTime
-            );
-
-            if (result.success) {
-                // Save to DB
-                user = new User({
-                    telegramId: ctx.from.id.toString(),
-                    username: ctx.from.username,
-                    firstName: ctx.from.first_name,
-                    lastName: ctx.from.last_name,
-                    trialUsed: true,
-                    subscriptionStatus: 'trial',
-                    keyExpiry: new Date(expiryTime),
-                    uuid: uuid,
-                    email: email,
-                    inboundId: parseInt(process.env.TRIAL_INBOUND_ID)
-                });
-                await user.save();
-
-                ctx.reply(`✅ *Trial Activated!*\n\n🔑 *UUID:* \`${uuid}\`\n📅 *Expires:* ${user.keyExpiry.toLocaleString()}\n\n⬇️ *Connection Link:*`, { parse_mode: 'Markdown' });
-                ctx.reply(`vless://${uuid}@your-domain:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Trial_${ctx.from.id}`); // Placeholder link format
-            } else {
-                ctx.reply(`❌ Failed to generate key: ${result.msg}`);
-                console.error(result);
+        ctx.reply(
+            '*Добро пожаловать в Portal!* 👋\n\nВаш доступ активирован. У вас есть *3 дня*, чтобы протестировать полную скорость без ограничений.\n\nЧтобы начать:\nНажмите кнопку «🔗 Подключиться» ниже.',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    Markup.button.callback('🔗 Подключиться', 'get_trial_key')
+                ])
             }
-
-        } else if (user.subscriptionStatus === 'trial') {
-            // Check if expired
-            if (new Date() > user.keyExpiry) {
-                ctx.reply('⚠️ Your trial has expired.', Markup.inlineKeyboard([
-                    Markup.button.callback('💎 Buy Premium ($5/Month)', 'buy_premium')
-                ]));
-            } else {
-                ctx.reply(`✅ Your trial is active.\n\n🔑 UUID: \`${user.uuid}\`\n📅 Expires: ${user.keyExpiry.toLocaleString()}`, { parse_mode: 'Markdown' });
-            }
-        } else if (user.subscriptionStatus === 'premium') {
-            ctx.reply(`💎 Premium Active.\n\n📅 Expires: ${user.keyExpiry.toLocaleString()}`);
-        }
-
+        );
     } catch (err) {
         console.error('Start error:', err);
         ctx.reply('An error occurred. Please try again later.');
     }
 });
 
+// Get Trial Key Action
+bot.action('get_trial_key', async (ctx) => {
+    try {
+        let user = await getUser(ctx);
+
+        if (user && user.trialUsed) {
+            // Check if expired
+            if (new Date() > user.keyExpiry) {
+                ctx.reply('⚠️ Ваш пробный период истек.', Markup.inlineKeyboard([
+                    Markup.button.callback('💎 Купить Premium', 'buy_premium')
+                ]));
+            } else {
+                const host = getHost();
+                const vlessLink = `vless://${user.uuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_${ctx.from.first_name}`;
+                ctx.reply(
+                    `✅ *Ваш пробный период активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry.toLocaleString()}`,
+                    {
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard([
+                            Markup.button.callback('💎 Купить Premium', 'buy_premium')
+                        ])
+                    }
+                );
+            }
+            return;
+        }
+
+        // New User: Create Trial
+        const uuid = uuidv4();
+        const email = `trial_${ctx.from.id}`;
+        const expiryTime = Date.now() + (3 * 24 * 60 * 60 * 1000); // 3 Days in ms
+
+        // Call Panel API
+        const result = await api.addClient(
+            { uuid, email },
+            parseInt(process.env.TRIAL_INBOUND_ID),
+            expiryTime
+        );
+
+        if (result.success) {
+            // Save to DB
+            user = new User({
+                telegramId: ctx.from.id.toString(),
+                username: ctx.from.username,
+                firstName: ctx.from.first_name,
+                lastName: ctx.from.last_name,
+                trialUsed: true,
+                subscriptionStatus: 'trial',
+                keyExpiry: new Date(expiryTime),
+                uuid: uuid,
+                email: email,
+                inboundId: parseInt(process.env.TRIAL_INBOUND_ID)
+            });
+            await user.save();
+
+            const host = getHost();
+            const vlessLink = `vless://${uuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_${ctx.from.first_name}`;
+
+            const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить Portal:*\n1. Скачайте приложение *V2RayTun* (или Happ) из маркета.\n2. Скопируйте ключ выше.\n3. В приложении нажмите «+» или «Import» и выберите «Import from Clipboard».\n4. Нажмите на кнопку подключения.\n\nДоступ активен: *3 дня.* ⚡️`;
+
+            ctx.reply(message, {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    Markup.button.callback('💎 Купить Premium', 'buy_premium')
+                ])
+            });
+        } else {
+            ctx.reply(`❌ Не удалось создать ключ: ${result.msg}`);
+            console.error(result);
+        }
+
+    } catch (err) {
+        console.error('Trial error:', err);
+        ctx.reply('An error occurred. Please try again later.');
+    }
+});
+
+const getHost = () => {
+    try {
+        return new URL(process.env.PANEL_URL).hostname;
+    } catch (e) {
+        return 'your-domain';
+    }
+};
+
 // Buy Premium Action (Mock)
+// Buy Premium Action
 bot.action('buy_premium', async (ctx) => {
-    ctx.reply('💳 Please confirm payment of $5 for 1 Month Access.', Markup.inlineKeyboard([
-        Markup.button.callback('✅ Confirm Payment', 'confirm_payment'),
-        Markup.button.callback('❌ Cancel', 'cancel_payment')
+    ctx.reply('👇 Выберите тарифный план:', Markup.inlineKeyboard([
+        [Markup.button.callback('1 Месяц - 180₽', 'select_1_month')],
+        [Markup.button.callback('3 Месяца - 380₽', 'select_3_months')],
+        [Markup.button.callback('1 Год - 900₽', 'select_1_year')]
     ]));
 });
 
-bot.action('confirm_payment', async (ctx) => {
+// Selection Handlers
+bot.action('select_1_month', (ctx) => {
+    ctx.reply('💳 Подтвердите оплату 180₽ за 1 Месяц.', Markup.inlineKeyboard([
+        Markup.button.callback('✅ Оплатить', 'confirm_payment_1_month'),
+        Markup.button.callback('❌ Отмена', 'cancel_payment')
+    ]));
+});
+
+bot.action('select_3_months', (ctx) => {
+    ctx.reply('💳 Подтвердите оплату 380₽ за 3 Месяца.', Markup.inlineKeyboard([
+        Markup.button.callback('✅ Оплатить', 'confirm_payment_3_months'),
+        Markup.button.callback('❌ Отмена', 'cancel_payment')
+    ]));
+});
+
+bot.action('select_1_year', (ctx) => {
+    ctx.reply('💳 Подтвердите оплату 900₽ за 1 Год.', Markup.inlineKeyboard([
+        Markup.button.callback('✅ Оплатить', 'confirm_payment_1_year'),
+        Markup.button.callback('❌ Отмена', 'cancel_payment')
+    ]));
+});
+
+const handlePayment = async (ctx, months, cost) => {
     try {
         const user = await getUser(ctx);
-        if (!user) return ctx.reply('User not found. Please type /start.');
+        if (!user) return ctx.reply('Пользователь не найден. Введите /start.');
 
         // Mock Payment Success
-        const newExpiry = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 Days
+        const days = months * 30; // Approximation
+        const newExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
 
-        // Update on Panel (Or add new client on Premium Inbound)
-        // For simplicity, let's assume we move them to Premium Inbound
-        // Note: In 3X-UI moving inbounds usually means deleting and re-adding or just adding new.
-        // Let's try adding a NEW client on the PREMIUM Inbound with the SAME UUID to avoid config changes on client side if ports/protocols allow?
-        // Or generate new. User requirement: "get the new bound id". 
-        // So we generate a NEW KEY on the PREMIUM INBOUND.
-
+        // Generate new key on premium inbound
         const newUuid = uuidv4();
-        const newEmail = `premium_${ctx.from.id}`;
+        const newEmail = `premium_${ctx.from.id}_${Date.now()}`;
 
         const result = await api.addClient(
             { uuid: newUuid, email: newEmail },
@@ -116,19 +176,26 @@ bot.action('confirm_payment', async (ctx) => {
             user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID);
             await user.save();
 
-            ctx.reply(`🎉 *Payment Successful!*\n\n💎 *Premium Activated* for 1 Month.\n\n🔑 *New UUID:* \`${newUuid}\`\n📅 *Expires:* ${user.keyExpiry.toLocaleString()}`, { parse_mode: 'Markdown' });
+            const host = getHost();
+            const vlessLink = `vless://${newUuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_Premium_${ctx.from.first_name}`;
+
+            ctx.reply(`🎉 *Оплата прошла успешно!*\n\n💎 *Premium активирован* на ${months} мес.\n\n🔑 *Ваш новый ключ:*\n\`${vlessLink}\`\n\n📅 *Истекает:* ${user.keyExpiry.toLocaleString()}`, { parse_mode: 'Markdown' });
         } else {
-            ctx.reply('❌ Failed to activate premium on the server. Please contact support.');
+            ctx.reply('❌ Ошибка активации на сервере. Обратитесь в поддержку.');
         }
 
     } catch (err) {
         console.error('Payment error:', err);
-        ctx.reply('Payment processing failed.');
+        ctx.reply('Ошибка обработки платежа.');
     }
-});
+};
+
+bot.action('confirm_payment_1_month', (ctx) => handlePayment(ctx, 1, 180));
+bot.action('confirm_payment_3_months', (ctx) => handlePayment(ctx, 3, 380));
+bot.action('confirm_payment_1_year', (ctx) => handlePayment(ctx, 12, 900));
 
 bot.action('cancel_payment', (ctx) => {
-    ctx.reply('Payment cancelled.');
+    ctx.reply('Оплата отменена.');
 });
 
 bot.launch().then(() => console.log('Bot started!'));
