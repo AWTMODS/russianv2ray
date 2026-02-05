@@ -42,7 +42,10 @@ const api = {
      * expiryTime: number (timestamp in ms)
      */
     addClient: async (user, inboundId, expiryTime) => {
-        if (!sessionCookie) await api.login();
+        if (!sessionCookie) {
+            const loggedIn = await api.login();
+            if (!loggedIn) return { success: false, msg: 'Login failed. Check server logs.' };
+        }
 
         // Normalize URL again (should ideally be a helper, but repeating for safety in this scope)
         let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
