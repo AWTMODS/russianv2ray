@@ -253,7 +253,17 @@ bot.action('cancel_payment', (ctx) => {
     ctx.reply('Оплата отменена.');
 });
 
-bot.launch().then(() => console.log('Bot started!'));
+
+// Start Bot safely
+(async () => {
+    try {
+        await connectDB();
+        bot.launch().then(() => console.log('Bot started!'));
+    } catch (error) {
+        console.error('Failed to start bot:', error);
+        process.exit(1);
+    }
+})();
 
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
