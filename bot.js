@@ -22,7 +22,8 @@ bot.start(async (ctx) => {
             {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
-                    Markup.button.callback('🔗 Подключиться', 'get_trial_key')
+                    Markup.button.callback('🔗 Подключиться', 'get_trial_key'),
+                    Markup.button.callback('💎 Купить Premium', 'buy_premium')
                 ])
             }
         );
@@ -120,11 +121,57 @@ const getHost = () => {
 // Buy Premium Action (Mock)
 // Buy Premium Action
 bot.action('buy_premium', async (ctx) => {
-    ctx.reply('👇 Выберите тарифный план:', Markup.inlineKeyboard([
-        [Markup.button.callback('1 Месяц - 180₽', 'select_1_month')],
-        [Markup.button.callback('3 Месяца - 380₽', 'select_3_months')],
-        [Markup.button.callback('1 Год - 900₽', 'select_1_year')]
-    ]));
+    const text = '*Тарифы Portal VPN:*\n\n🔹 1 месяц — 180₽\n⭐ 3 месяца — 400₽ (Выгода 140₽)\n👑 1 год — 900₽ (Выгода 50%)';
+    const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('Пробный период 📅', 'trial_info')],
+        [
+            Markup.button.callback('1 Месяц - 180₽', 'select_1_month'),
+            Markup.button.callback('3 Месяца - 400₽', 'select_3_months')
+        ],
+        [
+            Markup.button.callback('6 Месяцев - 750₽', 'select_6_months'),
+            Markup.button.callback('12 Месяцев - 900₽', 'select_1_year')
+        ],
+        [Markup.button.callback('Вернуться ↩️', 'return_main')]
+    ]);
+
+    try {
+        await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    } catch (e) {
+        await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    }
+});
+
+// Trial Info
+bot.action('trial_info', async (ctx) => {
+    const text = '⏳ *Пробный период*\n\nМы предоставляем 3 дня бесплатного доступа для тестирования скорости и качества нашего сервиса.\n\nПосле окончания пробного периода вы сможете выбрать любой тариф.';
+    const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('🔙 Назад', 'buy_premium')]
+    ]);
+
+    try {
+        await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    } catch (e) {
+        await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    }
+});
+
+// Return Main
+bot.action('return_main', async (ctx) => {
+    try {
+        await ctx.deleteMessage(); // Clean up menu
+    } catch (e) { }
+    // Re-send start message mechanism or just simple text
+    ctx.reply(
+        '*Главное меню* 🏠\nВыберите действие:',
+        {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+                Markup.button.callback('🔗 Подключиться', 'get_trial_key'),
+                Markup.button.callback('💎 Купить Premium', 'buy_premium')
+            ])
+        }
+    );
 });
 
 // Selection Handlers
@@ -136,8 +183,15 @@ bot.action('select_1_month', (ctx) => {
 });
 
 bot.action('select_3_months', (ctx) => {
-    ctx.reply('💳 Подтвердите оплату 380₽ за 3 Месяца.', Markup.inlineKeyboard([
+    ctx.reply('💳 Подтвердите оплату 400₽ за 3 Месяца.', Markup.inlineKeyboard([
         Markup.button.callback('✅ Оплатить', 'confirm_payment_3_months'),
+        Markup.button.callback('❌ Отмена', 'cancel_payment')
+    ]));
+});
+
+bot.action('select_6_months', (ctx) => {
+    ctx.reply('💳 Подтвердите оплату 750₽ за 6 Месяцев.', Markup.inlineKeyboard([
+        Markup.button.callback('✅ Оплатить', 'confirm_payment_6_months'),
         Markup.button.callback('❌ Отмена', 'cancel_payment')
     ]));
 });
@@ -191,7 +245,8 @@ const handlePayment = async (ctx, months, cost) => {
 };
 
 bot.action('confirm_payment_1_month', (ctx) => handlePayment(ctx, 1, 180));
-bot.action('confirm_payment_3_months', (ctx) => handlePayment(ctx, 3, 380));
+bot.action('confirm_payment_3_months', (ctx) => handlePayment(ctx, 3, 400));
+bot.action('confirm_payment_6_months', (ctx) => handlePayment(ctx, 6, 750));
 bot.action('confirm_payment_1_year', (ctx) => handlePayment(ctx, 12, 900));
 
 bot.action('cancel_payment', (ctx) => {
