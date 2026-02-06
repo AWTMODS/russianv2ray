@@ -3,13 +3,25 @@ const mongoose = require('mongoose');
 // Connect to MongoDB
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect(process.env.MONGODB_URI);
-        console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log(`✅ MongoDB Connection Initiated: ${process.env.MONGODB_URI}`);
     } catch (err) {
-        console.error('❌ MongoDB Connection Error:', err);
+        console.error('❌ MongoDB Initial Connection Error:', err);
         process.exit(1);
     }
 };
+
+mongoose.connection.on('connected', () => {
+    console.log('✅ MongoDB Connected successfully');
+});
+
+mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB Runtime Error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('⚠️ MongoDB Disconnected');
+});
 
 // Define User Schema
 const UserSchema = new mongoose.Schema({
