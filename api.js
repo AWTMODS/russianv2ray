@@ -141,6 +141,40 @@ const api = {
             // Fallback: If update fails, maybe try add (if it was deleted) or just report error
             return { success: false, msg: error.message };
         }
+    },
+
+    getInbounds: async () => {
+        if (!sessionCookie) {
+            const loggedIn = await api.login();
+            if (!loggedIn) return [];
+        }
+
+        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
+        if (baseUrl.endsWith('/panel')) {
+            baseUrl = baseUrl.slice(0, -6);
+        }
+
+        const listUrl = `${baseUrl}/panel/api/inbounds/list`;
+        console.log(`Fetching inbounds from: ${listUrl}`);
+
+        try {
+            const response = await axios.get(listUrl, {
+                headers: {
+                    'Cookie': sessionCookie,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.data.success) {
+                return response.data.obj;
+            } else {
+                console.error('Failed to list inbounds:', response.data);
+                return [];
+            }
+        } catch (error) {
+            console.error('Error fetching inbounds:', error.message);
+            return [];
+        }
     }
 };
 
