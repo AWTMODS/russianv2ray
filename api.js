@@ -1,59 +1,74 @@
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 
-let sessionCookie = null;
+/**
+ * 3X-UI Panel API Client
+ */
+class PanelAPI {
+    constructor() {
+        this.sessionCookie = null;
+        this.baseUrl = this.normalizeUrl(process.env.PANEL_URL);
+        this.username = process.env.PANEL_USERNAME;
+        this.password = process.env.PANEL_PASSWORD;
+    }
 
-const api = {
-    login: async () => {
-        // Normalize URL: Remove trailing slash and '/panel' if present to get the true base
-        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
+    /**
+     * Normalize panel URL
+     * @param {string} url - Panel URL from environment
+     * @returns {string} Normalized base URL
+     */
+    normalizeUrl(url) {
+        let baseUrl = url.replace(/\/$/, '');
         if (baseUrl.endsWith('/panel')) {
-            baseUrl = baseUrl.slice(0, -6); // Remove '/panel'
+            baseUrl = baseUrl.slice(0, -6);
         }
+        return baseUrl;
+    }
 
-        const loginUrl = `${baseUrl}/login`;
+    /**
+     * Login to 3X-UI panel
+     * @returns {Promise<boolean>} Login success status
+     */
+    async login() {
+        const loginUrl = `${this.baseUrl}/login`;
         console.log(`Attempting login to: ${loginUrl}`);
+
         try {
             const response = await axios.post(loginUrl, {
-                username: process.env.PANEL_USERNAME,
-                password: process.env.PANEL_PASSWORD
+                username: this.username,
+                password: this.password
             });
 
             if (response.data.success) {
                 const cookies = response.headers['set-cookie'];
                 if (cookies) {
-                    sessionCookie = cookies.map(cookie => cookie.split(';')[0]).join('; ');
-                    console.log('Logged into 3X-UI panel successfully.');
+                    this.sessionCookie = cookies.map(cookie => cookie.split(';')[0]).join('; ');
+                    console.log('✅ Logged into 3X-UI panel successfully.');
                     return true;
                 }
             }
-            console.error('Login failed logic:', response.data);
+            console.error('Login failed:', response.data);
             return false;
         } catch (error) {
             console.error(`Login error at ${loginUrl}:`, error.message);
             if (error.response) console.error('Status:', error.response.status);
             return false;
         }
-    },
+    }
 
     /**
-     * user: { email, uuid }
-     * inboundId: number
-     * expiryTime: number (timestamp in ms)
+     * Add a client to an inbound
+     * @param {Object} user - User object with email and uuid
+     * @param {number} inboundId - Inbound ID
+     * @param {number} expiryTime - Expiry timestamp in milliseconds
+     * @returns {Promise<Object>} Result object
      */
-    addClient: async (user, inboundId, expiryTime) => {
-        if (!sessionCookie) {
-            const loggedIn = await api.login();
+    async addClient(user, inboundId, expiryTime) {
+        if (!this.sessionCookie) {
+            const loggedIn = await this.login();
             if (!loggedIn) return { success: false, msg: 'Login failed. Check server logs.' };
         }
 
-        // Normalize URL again (should ideally be a helper, but repeating for safety in this scope)
-        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
-        if (baseUrl.endsWith('/panel')) {
-            baseUrl = baseUrl.slice(0, -6);
-        }
-
-        const addClientUrl = `${baseUrl}/panel/api/inbounds/addClient`;
+        const addClientUrl = `${this.baseUrl}/panel/api/inbounds/addClient`;
 
         const clientData = {
             id: inboundId,
@@ -74,7 +89,7 @@ const api = {
         try {
             const response = await axios.post(addClientUrl, clientData, {
                 headers: {
-                    'Cookie': sessionCookie,
+                    'Cookie': this.sessionCookie,
                     'Content-Type': 'application/json'
                 }
             });
@@ -85,8 +100,8 @@ const api = {
                 // If session expired, retry once
                 if (response.data.msg && response.data.msg.includes('login')) {
                     console.log('Session expired, retrying login...');
-                    await api.login();
-                    return api.addClient(user, inboundId, expiryTime);
+                    await this.login();
+                    return this.addClient(user, inboundId, expiryTime);
                 }
                 return { success: false, msg: response.data.msg };
             }
@@ -95,23 +110,20 @@ const api = {
             if (error.response) console.error('Status:', error.response.status);
             return { success: false, msg: error.message };
         }
-    },
+    }
 
-    updateClientExpiry: async (inboundId, email, uuid, newExpiryTime) => {
-        if (!sessionCookie) await api.login();
+    /**
+     * Update client expiry time
+     * @param {number} inboundId - Inbound ID
+     * @param {string} email - Client email
+     * @param {string} uuid - Client UUID
+     * @param {number} newExpiryTime - New expiry timestamp
+     * @returns {Promise<Object>} Result object
+     */
+    async updateClientExpiry(inboundId, email, uuid, newExpiryTime) {
+        if (!this.sessionCookie) await this.login();
 
-        // 3X-UI often uses updateClient by UUID or similar. 
-        // This is a best-guess based on common forks. 
-        // Often we need to fetch the existing client settings first or use a specific update endpoint.
-        // For now, assuming we might need to re-add or use valid update logic if available.
-        // A safer bet for many versions is updating the specific client in the inbound list, 
-        // but 'addClient' often fails if it exists. 
-        // Let's try the update endpoint.
-
-        // NOTE: Standard 3X-UI updateClient usually requires the client UUID in the URL or body.
-        // POST /panel/api/inbounds/updateClient/:uuid
         try {
-            // We need to construct the full client object for update
             const clientData = {
                 id: inboundId,
                 settings: JSON.stringify({
@@ -120,47 +132,47 @@ const api = {
                         email: email,
                         expiryTime: newExpiryTime,
                         enable: true,
-                        // Preserve other fields? Ideally we fetch primarily.
-                        // For simplicity in this iteration:
                         limitIp: 0,
                         totalGB: 0,
                     }]
                 })
             };
 
-            const response = await axios.post(`${process.env.PANEL_URL}/panel/api/inbounds/updateClient/${uuid}`, clientData, {
-                headers: {
-                    'Cookie': sessionCookie,
-                    'Content-Type': 'application/json'
+            const response = await axios.post(
+                `${this.baseUrl}/panel/api/inbounds/updateClient/${uuid}`,
+                clientData,
+                {
+                    headers: {
+                        'Cookie': this.sessionCookie,
+                        'Content-Type': 'application/json'
+                    }
                 }
-            });
+            );
 
             return response.data;
         } catch (error) {
             console.error('Error updating client:', error.message);
-            // Fallback: If update fails, maybe try add (if it was deleted) or just report error
             return { success: false, msg: error.message };
         }
-    },
+    }
 
-    getInbounds: async () => {
-        if (!sessionCookie) {
-            const loggedIn = await api.login();
+    /**
+     * Get all inbounds from panel
+     * @returns {Promise<Array>} Array of inbound objects
+     */
+    async getInbounds() {
+        if (!this.sessionCookie) {
+            const loggedIn = await this.login();
             if (!loggedIn) return [];
         }
 
-        let baseUrl = process.env.PANEL_URL.replace(/\/$/, '');
-        if (baseUrl.endsWith('/panel')) {
-            baseUrl = baseUrl.slice(0, -6);
-        }
-
-        const listUrl = `${baseUrl}/panel/api/inbounds/list`;
+        const listUrl = `${this.baseUrl}/panel/api/inbounds/list`;
         console.log(`Fetching inbounds from: ${listUrl}`);
 
         try {
             const response = await axios.get(listUrl, {
                 headers: {
-                    'Cookie': sessionCookie,
+                    'Cookie': this.sessionCookie,
                     'Content-Type': 'application/json'
                 }
             });
@@ -176,6 +188,6 @@ const api = {
             return [];
         }
     }
-};
+}
 
-module.exports = api;
+module.exports = new PanelAPI();
