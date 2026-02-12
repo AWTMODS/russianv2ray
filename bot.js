@@ -138,8 +138,8 @@ class TelegramBot {
                 const menuText = '*Главное меню* 🏠\nВыберите действие:';
 
                 const keyboard = Markup.inlineKeyboard([
-                    [Markup.button.callback('🔗 Подключиться', 'get_trial_key')],
-                    [Markup.button.callback('💎 Купить Premium', 'buy_premium')],
+                    [Markup.button.callback('🔗 Подключить VPN', 'get_trial_key')],
+                    [Markup.button.callback('💎 Купить подписку', 'buy_premium')],
                     [Markup.button.url('🔒 Политика конфиденциальности', 'https://example.com/privacy')]
                 ]);
 
