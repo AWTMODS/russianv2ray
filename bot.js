@@ -19,6 +19,7 @@ class TelegramBot {
         this.app = express();
         this.webhookPort = process.env.WEBHOOK_PORT || 3000;
         this.bannerPath = path.join(__dirname, 'banner.jpg');
+        this.mainMenuBannerPath = path.join(__dirname, 'main_menu.jpg');
 
         this.setupMiddleware();
         this.setupHandlers();
@@ -94,20 +95,29 @@ class TelegramBot {
         this.bot.start(async (ctx) => {
             try {
                 let user = await User.findOne({ telegramId: ctx.from.id.toString() });
-                if (!user) {
-                    user = new User({
-                        telegramId: ctx.from.id.toString(),
-                        username: ctx.from.username,
-                        firstName: ctx.from.first_name,
-                        lastName: ctx.from.last_name,
-                        subscriptionStatus: 'free',
-                        trialUsed: false
-                    });
-                    await user.save();
-                    console.log(`✅ New user created: ${ctx.from.id}`);
+
+                // If user exists, show main menu instead of welcome message
+                if (user) {
+                    return this.handleReturnMain(ctx);
                 }
 
+                // If new user, create account and show first-time welcome message
+                user = new User({
+                    telegramId: ctx.from.id.toString(),
+                    username: ctx.from.username,
+                    firstName: ctx.from.first_name,
+                    lastName: ctx.from.last_name,
+                    subscriptionStatus: 'free',
+                    trialUsed: false
+                });
+                await user.save();
+                console.log(`✅ New user created: ${ctx.from.id}`);
+
                 const welcomeMessage = `*Portal — твой личный выход в свободный интернет.*
+
+Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.
+Чтобы начать:
+Нажмите кнопку «🔗 Подключиться» ниже.
 
 🚀 *Максимальная скорость:* Смотри YouTube в 4K и забудь про долгую загрузку Instagram.
 
@@ -314,16 +324,35 @@ class TelegramBot {
             await ctx.deleteMessage();
         } catch (e) { }
 
-        ctx.reply(
-            '*Главное меню* 🏠\nВыберите действие:',
-            {
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard([
-                    Markup.button.callback('🔗 Подключиться', 'get_trial_key'),
-                    Markup.button.callback('💎 Купить Premium', 'buy_premium')
-                ])
+        const text = '*Главное меню* 🏠\nВыберите действие:';
+        const keyboard = Markup.inlineKeyboard([
+            Markup.button.callback('🔗 Подключиться', 'get_trial_key'),
+            Markup.button.callback('💎 Купить Premium', 'buy_premium')
+        ]);
+
+        try {
+            if (fs.existsSync(this.mainMenuBannerPath)) {
+                await ctx.replyWithPhoto(
+                    { source: fs.createReadStream(this.mainMenuBannerPath) },
+                    {
+                        caption: text,
+                        parse_mode: 'Markdown',
+                        ...keyboard
+                    }
+                );
+            } else {
+                await ctx.reply(text, {
+                    parse_mode: 'Markdown',
+                    ...keyboard
+                });
             }
-        );
+        } catch (error) {
+            console.error('Error sending main menu:', error);
+            await ctx.reply(text, {
+                parse_mode: 'Markdown',
+                ...keyboard
+            });
+        }
     }
 
     /**
