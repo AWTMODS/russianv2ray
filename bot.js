@@ -96,40 +96,36 @@ class TelegramBot {
             try {
                 let user = await User.findOne({ telegramId: ctx.from.id.toString() });
 
-                // If user exists, show main menu instead of welcome message
-                if (user) {
-                    return this.handleReturnMain(ctx);
+                // create if not exists
+                if (!user) {
+                    user = new User({
+                        telegramId: ctx.from.id.toString(),
+                        username: ctx.from.username,
+                        firstName: ctx.from.first_name,
+                        lastName: ctx.from.last_name,
+                        subscriptionStatus: 'free',
+                        trialUsed: false
+                    });
+                    await user.save();
+                    console.log(`✅ New user created: ${ctx.from.id}`);
                 }
 
-                // If new user, create account and show first-time welcome message
-                user = new User({
-                    telegramId: ctx.from.id.toString(),
-                    username: ctx.from.username,
-                    firstName: ctx.from.first_name,
-                    lastName: ctx.from.last_name,
-                    subscriptionStatus: 'free',
-                    trialUsed: false
-                });
-                await user.save();
-                console.log(`✅ New user created: ${ctx.from.id}`);
-
+                // ---------- MESSAGE 1 : WELCOME BANNER ----------
                 const welcomeMessage = `*Portal — твой личный выход в свободный интернет.*
 
-Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.
-Чтобы начать:
-Нажмите кнопку «🔗 Подключиться» ниже.
+Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.`;
 
-🚀 *Максимальная скорость:* Смотри YouTube в 4K и забудь про долгую загрузку Instagram.
+                if (fs.existsSync(this.bannerPath)) {
+                    await ctx.replyWithPhoto(
+                        { source: fs.createReadStream(this.bannerPath) },
+                        { caption: welcomeMessage, parse_mode: 'Markdown' }
+                    );
+                } else {
+                    await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+                }
 
-🛡 *Полная анонимность:* Мы не храним логи. Твой трафик зашифрован и невидим для провайдера.
-
-🌍 *Весь мир на ладони:* Доступ к любым заблокированным ресурсам в один клик.
-
-*Наши преимущества:*
-• 3 дня бесплатного теста для всех новых пользователей.
-• Работает на iPhone, Android, ПК и Mac.
-• Стабильный протокол, который невозможно заблокировать.
-• Оплата любыми картами РФ и через СБП.`;
+                // ---------- MESSAGE 2 : MAIN MENU ----------
+                const menuText = '*Главное меню* 🏠\nВыберите действие:';
 
                 const keyboard = Markup.inlineKeyboard([
                     [Markup.button.callback('🔗 Подключиться', 'get_trial_key')],
@@ -137,12 +133,28 @@ class TelegramBot {
                     [Markup.button.url('🔒 Политика конфиденциальности', 'https://example.com/privacy')]
                 ]);
 
-                await this.sendWithBanner(ctx, welcomeMessage, keyboard);
+                if (fs.existsSync(this.mainMenuBannerPath)) {
+                    await ctx.replyWithPhoto(
+                        { source: fs.createReadStream(this.mainMenuBannerPath) },
+                        {
+                            caption: menuText,
+                            parse_mode: 'Markdown',
+                            ...keyboard
+                        }
+                    );
+                } else {
+                    await ctx.reply(menuText, {
+                        parse_mode: 'Markdown',
+                        ...keyboard
+                    });
+                }
+
             } catch (err) {
                 console.error('Start error:', err);
                 ctx.reply('An error occurred. Please try again later.');
             }
         });
+
 
         // Get Trial Key
         this.bot.action('get_trial_key', async (ctx) => {
