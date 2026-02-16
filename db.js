@@ -80,8 +80,7 @@ const UserSchema = new mongoose.Schema({
     lastPaymentId: String,
     lastPaymentStatus: {
         type: String,
-        enum: ['pending', 'success', 'failed', 'cancelled'],
-        default: null
+        enum: ['pending', 'success', 'failed', 'cancelled']
     },
     paymentHistory: [{
         transactionId: String,
