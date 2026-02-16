@@ -168,8 +168,31 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 }
 
             } catch (err) {
-                console.error('Start error:', err);
-                ctx.reply('An error occurred. Please try again later.');
+                console.error('❌ Start command error:', err);
+                console.error('Error stack:', err.stack);
+                console.error('Error details:', {
+                    message: err.message,
+                    name: err.name,
+                    userId: ctx.from?.id,
+                    username: ctx.from?.username
+                });
+
+                // Send a more helpful error message
+                let errorMessage = '❌ Произошла ошибка при запуске бота.\n\n';
+
+                if (err.name === 'MongooseError' || err.name === 'MongoError') {
+                    errorMessage += 'Проблема с подключением к базе данных. Пожалуйста, попробуйте позже.';
+                } else if (err.message && err.message.includes('ENOENT')) {
+                    errorMessage += 'Отсутствует необходимый файл. Обратитесь в поддержку.';
+                } else {
+                    errorMessage += 'Пожалуйста, попробуйте позже или обратитесь в поддержку.';
+                }
+
+                errorMessage += `\n\n🆔 ID ошибки: ${Date.now()}`;
+
+                ctx.reply(errorMessage).catch(replyErr => {
+                    console.error('Failed to send error message:', replyErr);
+                });
             }
         });
 
@@ -292,8 +315,29 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 console.error(result);
             }
         } catch (err) {
-            console.error('Trial error:', err);
-            ctx.reply('An error occurred. Please try again later.');
+            console.error('❌ Trial key error:', err);
+            console.error('Error stack:', err.stack);
+            console.error('Error details:', {
+                message: err.message,
+                name: err.name,
+                userId: ctx.from?.id
+            });
+
+            let errorMessage = '❌ Произошла ошибка при создании пробного ключа.\n\n';
+
+            if (err.name === 'MongooseError' || err.name === 'MongoError') {
+                errorMessage += 'Проблема с базой данных. Попробуйте позже.';
+            } else if (err.message && err.message.includes('ECONNREFUSED')) {
+                errorMessage += 'Не удалось подключиться к панели. Обратитесь в поддержку.';
+            } else {
+                errorMessage += 'Попробуйте позже или обратитесь в поддержку.';
+            }
+
+            errorMessage += `\n\n🆔 ID ошибки: ${Date.now()}`;
+
+            ctx.reply(errorMessage).catch(replyErr => {
+                console.error('Failed to send error message:', replyErr);
+            });
         }
     }
 
@@ -621,23 +665,37 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
      */
     async start() {
         try {
+            console.log('🚀 Starting bot...');
+            console.log('📊 Environment check:');
+            console.log('  - BOT_TOKEN:', process.env.BOT_TOKEN ? '✅ Set' : '❌ Missing');
+            console.log('  - MONGODB_URI:', process.env.MONGODB_URI ? '✅ Set' : '❌ Missing');
+            console.log('  - PANEL_URL:', process.env.PANEL_URL ? '✅ Set' : '❌ Missing');
+            console.log('  - TRIAL_INBOUND_ID:', process.env.TRIAL_INBOUND_ID ? '✅ Set' : '❌ Missing');
+            console.log('  - PREMIUM_INBOUND_ID:', process.env.PREMIUM_INBOUND_ID ? '✅ Set' : '❌ Missing');
+
+            console.log('\n🔌 Connecting to MongoDB...');
             await connectDB();
+            console.log('✅ MongoDB connected successfully');
 
             // Start webhook server
             this.app.listen(this.webhookPort, () => {
-                console.log(`🌐 Webhook server listening on port ${this.webhookPort}`);
+                console.log(`\n🌐 Webhook server listening on port ${this.webhookPort}`);
                 console.log(`📡 Webhook URL: ${process.env.WEBHOOK_BASE_URL}/webhook/platega`);
             });
 
             // Start bot
+            console.log('\n🤖 Launching Telegram bot...');
             await this.bot.launch();
-            console.log('🤖 Bot started successfully!');
+            console.log('✅ Bot started successfully!');
+            console.log('\n✨ Bot is ready to accept commands!\n');
 
             // Graceful shutdown
             process.once('SIGINT', () => this.bot.stop('SIGINT'));
             process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
         } catch (error) {
-            console.error('❌ Failed to start bot:', error);
+            console.error('\n❌ Failed to start bot:', error);
+            console.error('Error stack:', error.stack);
+            console.error('\nPlease check your .env configuration and ensure all services are running.');
             process.exit(1);
         }
     }
