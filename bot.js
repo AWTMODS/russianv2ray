@@ -173,8 +173,8 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 console.error('Error details:', {
                     message: err.message,
                     name: err.name,
-                    userId: ctx.from?.id,
-                    username: ctx.from?.username
+                    userId: ctx.from ? ctx.from.id : undefined,
+                    username: ctx.from ? ctx.from.username : undefined
                 });
 
                 // Send a more helpful error message
@@ -320,7 +320,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
             console.error('Error details:', {
                 message: err.message,
                 name: err.name,
-                userId: ctx.from?.id
+                userId: ctx.from ? ctx.from.id : undefined
             });
 
             let errorMessage = '❌ Произошла ошибка при создании пробного ключа.\n\n';
