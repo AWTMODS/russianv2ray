@@ -57,6 +57,16 @@ class TelegramBot {
         return 'pending';
     }
 
+    buildTrialVlessLink(uuid, firstName = 'user') {
+        const host = process.env.VLESS_HOST || '185.115.33.254';
+        const port = process.env.VLESS_PORT || '443';
+        const fp = process.env.VLESS_FP || 'chrome';
+        const alpn = encodeURIComponent(process.env.VLESS_ALPN || 'h2,http/1.1');
+        const tag = encodeURIComponent(process.env.VLESS_TAG || `Portal_${firstName}`);
+
+        return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=tls&fp=${fp}&alpn=${alpn}#${tag}`;
+    }
+
     setupHandlers() {
         this.bot.start(async (ctx) => {
             try {
@@ -157,38 +167,55 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     }
 
     async handleTrialKey(ctx) {
+        const traceId = this.newTraceId('trial');
         try {
             let user = await this.getUser(ctx);
+            this.logStep(traceId, 'Trial request received', { telegramId: ctx.from.id.toString() });
 
             if (user && user.trialUsed) {
-                if (user.keyExpiry && new Date() > user.keyExpiry) {
+                const isActive = user.keyExpiry && new Date() <= user.keyExpiry;
+                this.logStep(traceId, 'User has trialUsed', {
+                    uuid: user.uuid,
+                    keyExpiry: user.keyExpiry,
+                    isActive
+                });
+
+                if (isActive && user.uuid) {
+                    const vlessLink = this.buildTrialVlessLink(user.uuid, ctx.from.first_name);
                     await ctx.reply(
-                        '⚠️ Ваш пробный период истек.',
-                        Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
-                    );
-                } else {
-                    const host = this.getHost();
-                    const vlessLink = `vless://${user.uuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_${ctx.from.first_name}`;
-                    await ctx.reply(
-                        `✅ *Ваш пробный период активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry ? user.keyExpiry.toLocaleString('ru-RU') : '—'}`,
+                        `✅ *Ваш пробный период активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry.toLocaleString('ru-RU')}`,
                         {
                             parse_mode: 'Markdown',
                             ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
                         }
                     );
+                    return;
                 }
+
+                await ctx.reply(
+                    '⚠️ Ваш пробный период истек.',
+                    Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                );
                 return;
             }
 
             const uuid = uuidv4();
-            const email = `trial_${ctx.from.id}`;
-            const expiryTime = Date.now() + (3 * 24 * 60 * 60 * 1000);
+            const email = `trial_${ctx.from.id}_${Date.now()}`;
+            const expiryTime = Date.now() + (72 * 60 * 60 * 1000); // 72 hours
+
+            this.logStep(traceId, 'Creating trial client in panel', {
+                uuid,
+                email,
+                expiryTime
+            });
 
             const result = await api.addClient(
                 { uuid, email },
                 parseInt(process.env.TRIAL_INBOUND_ID, 10),
                 expiryTime
             );
+
+            this.logStep(traceId, 'Panel addClient response', { result });
 
             if (result.success) {
                 if (!user) {
@@ -208,17 +235,24 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 user.inboundId = parseInt(process.env.TRIAL_INBOUND_ID, 10);
                 await user.save();
 
-                const host = this.getHost();
-                const vlessLink = `vless://${uuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_${ctx.from.first_name}`;
-                const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить Portal:*\n1. Скачайте приложение *V2RayTun* (или Happ) из маркета.\n2. Скопируйте ключ выше.\n3. В приложении нажмите «+» или «Import» и выберите «Import from Clipboard».\n4. Нажмите на кнопку подключения.\n\nДоступ активен: *3 дня.* ⚡️`;
+                this.logStep(traceId, 'Trial data saved to DB', {
+                    telegramId: user.telegramId,
+                    uuid: user.uuid,
+                    keyExpiry: user.keyExpiry
+                });
+
+                const vlessLink = this.buildTrialVlessLink(uuid, ctx.from.first_name);
+                const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить Portal:*\n1. Скачайте приложение *V2RayTun* (или Happ) из маркета.\n2. Скопируйте ключ выше.\n3. В приложении нажмите «+» или «Import» и выберите «Import from Clipboard».\n4. Нажмите на кнопку подключения.\n\nДоступ активен: *72 часа.* ⚡️`;
 
                 await ctx.reply(message, {
                     parse_mode: 'Markdown',
                     ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
                 });
+
+                this.logStep(traceId, 'Trial key sent to user', { telegramId: ctx.from.id.toString() });
             } else {
                 await ctx.reply(`❌ Не удалось создать ключ: ${result.msg || 'неизвестная ошибка'}`);
-                console.error('Trial key API result:', result);
+                console.error(`[${traceId}] Trial key API result:`, result);
             }
         } catch (err) {
             const errorId = Date.now();
