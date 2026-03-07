@@ -13,6 +13,14 @@ class PlategaPaymentService {
         }
     }
 
+    buildHeaders() {
+        return {
+            'X-MerchantId': this.merchantId,
+            'X-Secret': this.secret,
+            'Content-Type': 'application/json'
+        };
+    }
+
     /**
      * Create a payment transaction
      * @param {number} amount - Amount in rubles (will be converted to kopecks)
@@ -20,7 +28,7 @@ class PlategaPaymentService {
      * @param {string} userId - Telegram user ID
      * @param {string} returnUrl - URL to redirect after successful payment
      * @param {string} failedUrl - URL to redirect after failed payment
-     * @returns {Promise<{success: boolean, paymentUrl?: string, transactionId?: string, error?: string}>}
+     * @returns {Promise<{success: boolean, paymentUrl?: string, transactionId?: string, externalId?: string, error?: string}>}
      */
     async createPayment(amount, description, userId, returnUrl, failedUrl) {
         try {
@@ -28,45 +36,79 @@ class PlategaPaymentService {
                 return { success: false, error: 'Platega credentials not configured' };
             }
 
-            // Convert rubles to kopecks
-            const amountInKopecks = Math.round(amount * 100);
+            const amountInKopecks = Math.round(Number(amount) * 100);
+            const externalId = `user_${userId}_${Date.now()}`;
 
-            const payload = {
-                paymentMethod: 'card',
-                paymentDetails: { amount: amountInKopecks, currency: 'RUB' },
-                description,
-                externalId: `user_${userId}_${Date.now()}`,
+            // Platega expects enum value, not "card" string.
+            const command = {
+                paymentMethod: Number(process.env.PLATEGA_PAYMENT_METHOD || 2),
+                paymentDetails: {
+                    amount: amountInKopecks,
+                    currency: 'RUB'
+                },
+                description: description,
+                payload: externalId,
+                externalId: externalId,
                 return: returnUrl || `${process.env.WEBHOOK_BASE_URL}/payment/success`,
                 failedUrl: failedUrl || `${process.env.WEBHOOK_BASE_URL}/payment/failed`,
                 callbackUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/platega`,
-                metadata: { userId, timestamp: new Date().toISOString() }
+                metadata: {
+                    userId: userId,
+                    timestamp: new Date().toISOString()
+                }
             };
 
-            const response = await axios.post(
-                `${this.baseUrl}/transaction/process`,
-                payload,
-                { headers: { 'X-MerchantId': this.merchantId, 'X-Secret': this.secret, 'Content-Type': 'application/json' } }
-            );
+            let response;
+            try {
+                response = await axios.post(
+                    `${this.baseUrl}/transaction/process`,
+                    command,
+                    { headers: this.buildHeaders() }
+                );
+            } catch (e) {
+                // Some API variants require { command: {...} } wrapper.
+                if (e.response && e.response.status === 400 && e.response.data && e.response.data.errors && e.response.data.errors.command) {
+                    response = await axios.post(
+                        `${this.baseUrl}/transaction/process`,
+                        { command: command },
+                        { headers: this.buildHeaders() }
+                    );
+                } else {
+                    throw e;
+                }
+            }
 
-            if (response.data && response.data.redirect) {
+            const data = (response && response.data) || {};
+            const paymentUrl =
+                data.redirect ||
+                data.paymentUrl ||
+                data.url ||
+                (data.data && (data.data.redirect || data.data.paymentUrl || data.data.url));
+
+            const transactionId =
+                data.transactionId ||
+                data.id ||
+                (data.data && (data.data.transactionId || data.data.id));
+
+            if (paymentUrl) {
                 return {
                     success: true,
-                    paymentUrl: response.data.redirect,
-                    transactionId: response.data.transactionId || response.data.id,
-                    externalId: payload.externalId
-                };
-
-            } else {
-                return {
-                    success: false,
-                    error: 'Invalid response from Platega API'
+                    paymentUrl: paymentUrl,
+                    transactionId: transactionId,
+                    externalId: externalId
                 };
             }
-        } catch (error) {
-            console.error('Platega payment creation error:', error.response?.data || error.message);
+
             return {
                 success: false,
-                error: error.response?.data?.message || error.message
+                error: `Invalid response from Platega API: ${JSON.stringify(data)}`
+            };
+        } catch (error) {
+            const details = (error.response && error.response.data) || error.message;
+            console.error('Platega payment creation error:', details);
+            return {
+                success: false,
+                error: typeof details === 'string' ? details : JSON.stringify(details)
             };
         }
     }
@@ -74,7 +116,7 @@ class PlategaPaymentService {
     /**
      * Check payment status
      * @param {string} transactionId - Platega transaction ID
-     * @returns {Promise<{success: boolean, status?: string, error?: string}>}
+     * @returns {Promise<{success: boolean, status?: string, data?: object, error?: string}>}
      */
     async checkPaymentStatus(transactionId) {
         try {
@@ -84,27 +126,30 @@ class PlategaPaymentService {
 
             const response = await axios.get(
                 `${this.baseUrl}/transaction/${transactionId}`,
-                { headers: { 'X-MerchantId': this.merchantId, 'X-Secret': this.secret } }
+                { headers: this.buildHeaders() }
             );
 
+            const data = (response && response.data) || {};
+            const status = data.status || (data.data && data.data.status);
 
-            if (response.data) {
+            if (data) {
                 return {
                     success: true,
-                    status: response.data.status,
-                    data: response.data
-                };
-            } else {
-                return {
-                    success: false,
-                    error: 'Invalid response from Platega API'
+                    status: status,
+                    data: data
                 };
             }
-        } catch (error) {
-            console.error('Platega status check error:', error.response?.data || error.message);
+
             return {
                 success: false,
-                error: error.response?.data?.message || error.message
+                error: 'Invalid response from Platega API'
+            };
+        } catch (error) {
+            const details = (error.response && error.response.data) || error.message;
+            console.error('Platega status check error:', details);
+            return {
+                success: false,
+                error: typeof details === 'string' ? details : JSON.stringify(details)
             };
         }
     }
@@ -118,7 +163,7 @@ class PlategaPaymentService {
     verifyWebhookSignature(payload, signature) {
         if (!this.webhookSecret) {
             console.warn('⚠️ Webhook secret not configured. Skipping signature verification.');
-            return true; // Allow webhooks if secret not configured (not recommended for production)
+            return true;
         }
 
         try {
@@ -146,11 +191,11 @@ class PlategaPaymentService {
     processWebhook(webhookData) {
         return {
             transactionId: webhookData.transactionId || webhookData.id,
-            externalId: webhookData.externalId,
+            externalId: webhookData.externalId || webhookData.payload,
             status: webhookData.status,
             amount: webhookData.amount,
             currency: webhookData.currency,
-            userId: webhookData.metadata?.userId,
+            userId: webhookData.metadata && webhookData.metadata.userId,
             timestamp: webhookData.timestamp || new Date().toISOString()
         };
     }
