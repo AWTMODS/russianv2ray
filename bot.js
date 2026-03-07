@@ -10,9 +10,6 @@ const api = require('./api');
 const { User, Payment, connectDB } = require('./db');
 const platega = require('./platega');
 
-/**
- * Main Telegram Bot Class
- */
 class TelegramBot {
     constructor() {
         this.bot = new Telegraf(process.env.BOT_TOKEN);
@@ -42,27 +39,22 @@ class TelegramBot {
         }
     }
 
+    newTraceId(prefix = 'pay') {
+        return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    }
+
+    logStep(traceId, step, details = {}) {
+        console.log(`[${traceId}] ${step}`, details);
+    }
+
     normalizePaymentStatus(rawStatus) {
         const status = String(rawStatus || '').toUpperCase();
 
-        const successStatuses = ['SUCCESS', 'SUCCEEDED', 'CONFIRMED', 'PAID', 'COMPLETED'];
-        const failedStatuses = ['FAILED', 'DECLINED', 'EXPIRED'];
-        const cancelledStatuses = ['CANCELLED', 'CANCELED'];
+        if (['SUCCESS', 'SUCCEEDED', 'CONFIRMED', 'PAID', 'COMPLETED'].includes(status)) return 'success';
+        if (['FAILED', 'DECLINED', 'EXPIRED'].includes(status)) return 'failed';
+        if (['CANCELLED', 'CANCELED'].includes(status)) return 'cancelled';
 
-        if (successStatuses.includes(status)) return 'success';
-        if (failedStatuses.includes(status)) return 'failed';
-        if (cancelledStatuses.includes(status)) return 'cancelled';
         return 'pending';
-    }
-
-    statusEmojiByNormalized(normalizedStatus) {
-        const map = {
-            pending: '⏳',
-            success: '✅',
-            failed: '❌',
-            cancelled: '🚫'
-        };
-        return map[normalizedStatus] || '❓';
     }
 
     setupHandlers() {
@@ -134,7 +126,6 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 console.error('Error stack:', err.stack);
 
                 let errorMessage = '❌ Произошла ошибка при запуске бота.\n\n';
-
                 if (
                     /mongoose|mongo/i.test(err.name || '') ||
                     /(mongodb|mongo|server selection|econnrefused|timed out)/i.test(err.message || '')
@@ -219,7 +210,6 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
                 const host = this.getHost();
                 const vlessLink = `vless://${uuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_${ctx.from.first_name}`;
-
                 const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить Portal:*\n1. Скачайте приложение *V2RayTun* (или Happ) из маркета.\n2. Скопируйте ключ выше.\n3. В приложении нажмите «+» или «Import» и выберите «Import from Clipboard».\n4. Нажмите на кнопку подключения.\n\nДоступ активен: *3 дня.* ⚡️`;
 
                 await ctx.reply(message, {
@@ -235,7 +225,6 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
             console.error(`[Error ID: ${errorId}] Trial key error:`, err);
 
             let errorMessage = '❌ Произошла ошибка при создании пробного ключа.\n\n';
-
             if (
                 /mongoose|mongo/i.test(err.name || '') ||
                 /(mongodb|mongo|server selection|econnrefused|timed out)/i.test(err.message || '')
@@ -320,8 +309,17 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     }
 
     async handlePaymentSelection(ctx, months, cost) {
+        const traceId = this.newTraceId('payment_create');
+
         try {
+            this.logStep(traceId, 'START', {
+                telegramId: ctx.from.id.toString(),
+                months,
+                cost
+            });
+
             let user = await this.getUser(ctx);
+            this.logStep(traceId, 'User lookup', { found: !!user });
 
             if (!user) {
                 user = new User({
@@ -333,18 +331,28 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     trialUsed: false
                 });
                 await user.save();
+                this.logStep(traceId, 'User created', { userId: user.telegramId });
             }
 
             const description = `Portal VPN - ${months} ${months === 1 ? 'месяц' : months < 5 ? 'месяца' : 'месяцев'}`;
-            const base = process.env.WEBHOOK_BASE_URL || `https://t.me/${process.env.BOT_TOKEN.split(':')[0]}`;
+            const successUrl = `${process.env.WEBHOOK_BASE_URL || 'https://t.me/' + process.env.BOT_TOKEN.split(':')[0]}/payment/success`;
+            const failedUrl = `${process.env.WEBHOOK_BASE_URL || 'https://t.me/' + process.env.BOT_TOKEN.split(':')[0]}/payment/failed`;
+
+            this.logStep(traceId, 'Calling createPayment', { description, successUrl, failedUrl });
 
             const paymentResult = await platega.createPayment(
                 cost,
                 description,
                 ctx.from.id.toString(),
-                `${base}/payment/success`,
-                `${base}/payment/failed`
+                successUrl,
+                failedUrl
             );
+
+            this.logStep(traceId, 'createPayment response', {
+                success: paymentResult.success,
+                transactionId: paymentResult.transactionId,
+                error: paymentResult.error
+            });
 
             if (paymentResult.success) {
                 const payment = new Payment({
@@ -358,14 +366,21 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     paymentUrl: paymentResult.paymentUrl,
                     metadata: {
                         username: ctx.from.username,
-                        firstName: ctx.from.first_name
+                        firstName: ctx.from.first_name,
+                        traceId
                     }
                 });
+
                 await payment.save();
+                this.logStep(traceId, 'Payment saved', { transactionId: payment.transactionId });
 
                 user.lastPaymentId = paymentResult.transactionId;
                 user.lastPaymentStatus = 'pending';
                 await user.save();
+                this.logStep(traceId, 'User updated', {
+                    userId: user.telegramId,
+                    lastPaymentId: user.lastPaymentId
+                });
 
                 await ctx.reply(
                     `💳 *Оплата подписки*\n\n` +
@@ -382,32 +397,59 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         ])
                     }
                 );
+
+                this.logStep(traceId, 'Payment link sent', {
+                    telegramId: ctx.from.id.toString(),
+                    transactionId: paymentResult.transactionId
+                });
             } else {
+                this.logStep(traceId, 'Payment creation failed', { error: paymentResult.error });
+
                 await ctx.reply(
-                    `❌ Не удалось создать платеж.\n\nОшибка: ${paymentResult.error || 'Unknown'}`,
+                    '❌ Не удалось создать платеж. Попробуйте позже или обратитесь в поддержку.\n\n' +
+                    `Ошибка: ${paymentResult.error}`,
                     Markup.inlineKeyboard([[Markup.button.callback('🔙 Назад', 'buy_premium')]])
                 );
             }
         } catch (err) {
-            console.error('Payment selection error:', err);
+            console.error(`[${traceId}] Payment selection error:`, err);
             await ctx.reply('Произошла ошибка. Попробуйте позже.');
         }
     }
 
     async handleCheckPayment(ctx) {
         const transactionId = ctx.match[1];
+        const traceId = this.newTraceId('payment_check');
 
         try {
+            this.logStep(traceId, 'Manual status check requested', {
+                transactionId,
+                telegramId: ctx.from.id.toString()
+            });
+
             const statusResult = await platega.checkPaymentStatus(transactionId);
+            const normalizedStatus = this.normalizePaymentStatus(statusResult.status);
+
+            this.logStep(traceId, 'Status check response', {
+                success: statusResult.success,
+                rawStatus: statusResult.status,
+                normalizedStatus,
+                data: statusResult.data
+            });
 
             if (statusResult.success) {
-                const rawStatus = statusResult.status;
-                const normalizedStatus = this.normalizePaymentStatus(rawStatus);
+                const statusEmoji = {
+                    pending: '⏳',
+                    success: '✅',
+                    failed: '❌',
+                    cancelled: '🚫'
+                };
 
                 await ctx.reply(
-                    `${this.statusEmojiByNormalized(normalizedStatus)} *Статус платежа*\n\n` +
+                    `${statusEmoji[normalizedStatus] || '❓'} *Статус платежа*\n\n` +
                     `ID: \`${transactionId}\`\n` +
-                    `Статус: ${rawStatus}\n\n` +
+                    `Статус: ${statusResult.status}\n` +
+                    `Нормализованный: ${normalizedStatus}\n\n` +
                     (normalizedStatus === 'pending' ? 'Ожидаем подтверждения оплаты...' : ''),
                     { parse_mode: 'Markdown' }
                 );
@@ -415,41 +457,63 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 await ctx.reply('Не удалось проверить статус платежа.');
             }
         } catch (err) {
-            console.error('Payment status check error:', err);
+            console.error(`[${traceId}] Payment status check error:`, err);
             await ctx.reply('Ошибка при проверке статуса.');
         }
     }
 
     setupWebhook() {
         this.app.post('/webhook/platega', async (req, res) => {
+            const traceId = this.newTraceId('payment_webhook');
+
             try {
-                console.log('Received Platega webhook:', JSON.stringify(req.body, null, 2));
+                this.logStep(traceId, 'Webhook received', { body: req.body });
 
                 const signature = req.headers['x-signature'] || req.headers['x-platega-signature'];
                 if (signature && !platega.verifyWebhookSignature(req.body, signature)) {
+                    this.logStep(traceId, 'Invalid webhook signature', { signaturePresent: !!signature });
                     return res.status(401).json({ error: 'Invalid signature' });
                 }
 
                 const webhookData = platega.processWebhook(req.body);
                 const { transactionId, status: rawStatus, userId } = webhookData;
+                const normalizedStatus = this.normalizePaymentStatus(rawStatus);
+
+                this.logStep(traceId, 'Webhook parsed', {
+                    transactionId,
+                    rawStatus,
+                    normalizedStatus,
+                    userId
+                });
 
                 const payment = await Payment.findOne({ transactionId });
-                if (!payment) return res.status(404).json({ error: 'Payment not found' });
-
-                const normalizedStatus = this.normalizePaymentStatus(rawStatus);
-                const isSuccess = normalizedStatus === 'success';
-                const isFailed = normalizedStatus === 'failed';
+                if (!payment) {
+                    this.logStep(traceId, 'Payment not found', { transactionId });
+                    return res.status(404).json({ error: 'Payment not found' });
+                }
 
                 payment.status = normalizedStatus;
-                if (isSuccess) payment.completedAt = new Date();
+                if (normalizedStatus === 'success') {
+                    payment.completedAt = new Date();
+                }
                 await payment.save();
+
+                this.logStep(traceId, 'Payment updated', {
+                    transactionId,
+                    status: payment.status
+                });
 
                 const effectiveUserId = userId || payment.userId;
                 const user = await User.findOne({ telegramId: effectiveUserId });
-                if (!user) return res.status(404).json({ error: 'User not found' });
+                if (!user) {
+                    this.logStep(traceId, 'User not found', { effectiveUserId });
+                    return res.status(404).json({ error: 'User not found' });
+                }
 
                 user.lastPaymentStatus = normalizedStatus;
-                if (!user.paymentHistory) user.paymentHistory = [];
+                if (!user.paymentHistory) {
+                    user.paymentHistory = [];
+                }
                 user.paymentHistory.push({
                     transactionId,
                     amount: payment.amount,
@@ -458,10 +522,19 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 });
                 await user.save();
 
-                if (isSuccess) {
+                this.logStep(traceId, 'User history updated', {
+                    userId: effectiveUserId,
+                    lastPaymentStatus: user.lastPaymentStatus
+                });
+
+                if (normalizedStatus === 'success') {
+                    this.logStep(traceId, 'Success status, activating subscription', {
+                        userId: effectiveUserId,
+                        months: payment.subscriptionMonths
+                    });
+
                     const days = payment.subscriptionMonths * 30;
                     const newExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-
                     const newUuid = uuidv4();
                     const newEmail = `premium_${effectiveUserId}_${Date.now()}`;
 
@@ -470,6 +543,8 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         parseInt(process.env.PREMIUM_INBOUND_ID, 10),
                         newExpiry
                     );
+
+                    this.logStep(traceId, 'Panel addClient response', { result });
 
                     if (result.success) {
                         user.subscriptionStatus = 'premium';
@@ -495,23 +570,41 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                             `4. Подключитесь к VPN`,
                             { parse_mode: 'Markdown' }
                         );
+
+                        this.logStep(traceId, 'Subscription activated and key sent', {
+                            userId: effectiveUserId
+                        });
                     } else {
+                        this.logStep(traceId, 'Key creation failed', {
+                            userId: effectiveUserId,
+                            result
+                        });
+
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
                             '⚠️ Оплата прошла успешно, но возникла проблема с активацией ключа. Обратитесь в поддержку.'
                         );
                     }
-                } else if (isFailed) {
+                } else if (normalizedStatus === 'failed') {
+                    this.logStep(traceId, 'Payment failed status, notifying user', {
+                        userId: effectiveUserId
+                    });
+
                     await this.bot.telegram.sendMessage(
                         effectiveUserId,
                         '❌ *Оплата не прошла*\n\nПопробуйте еще раз или обратитесь в поддержку.',
                         { parse_mode: 'Markdown' }
                     );
+                } else {
+                    this.logStep(traceId, 'Non-final payment status', {
+                        normalizedStatus,
+                        rawStatus
+                    });
                 }
 
                 return res.status(200).json({ success: true });
             } catch (error) {
-                console.error('Webhook processing error:', error);
+                console.error(`[${traceId}] Webhook processing error:`, error);
                 return res.status(500).json({ error: 'Internal server error' });
             }
         });
@@ -524,20 +617,32 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     async start() {
         try {
             console.log('🚀 Starting bot...');
+            console.log('📊 Environment check:');
+            console.log('  - BOT_TOKEN:', process.env.BOT_TOKEN ? '✅ Set' : '❌ Missing');
+            console.log('  - MONGODB_URI:', process.env.MONGODB_URI ? '✅ Set' : '❌ Missing');
+            console.log('  - PANEL_URL:', process.env.PANEL_URL ? '✅ Set' : '❌ Missing');
+            console.log('  - TRIAL_INBOUND_ID:', process.env.TRIAL_INBOUND_ID ? '✅ Set' : '❌ Missing');
+            console.log('  - PREMIUM_INBOUND_ID:', process.env.PREMIUM_INBOUND_ID ? '✅ Set' : '❌ Missing');
+
+            console.log('\n🔌 Connecting to MongoDB...');
             await connectDB();
+            console.log('✅ MongoDB connected successfully');
 
             this.app.listen(this.webhookPort, () => {
-                console.log(`🌐 Webhook server listening on port ${this.webhookPort}`);
+                console.log(`\n🌐 Webhook server listening on port ${this.webhookPort}`);
                 console.log(`📡 Webhook URL: ${process.env.WEBHOOK_BASE_URL}/webhook/platega`);
             });
 
+            console.log('\n🤖 Launching Telegram bot...');
             await this.bot.launch();
             console.log('✅ Bot started successfully!');
+            console.log('\n✨ Bot is ready to accept commands!\n');
 
             process.once('SIGINT', () => this.bot.stop('SIGINT'));
             process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
         } catch (error) {
-            console.error('❌ Failed to start bot:', error);
+            console.error('\n❌ Failed to start bot:', error);
+            console.error('Error stack:', error.stack);
             process.exit(1);
         }
     }
