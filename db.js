@@ -67,6 +67,10 @@ const UserSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    trialExpiryReminderSent: {
+        type: Boolean,
+        default: false
+    },
     subscriptionStatus: {
         type: String,
         enum: ['trial', 'premium', 'free'],
@@ -93,6 +97,9 @@ const UserSchema = new mongoose.Schema({
         default: Date.now
     }
 });
+
+
+
 
 // Static method to find one user (emulating previous behavior)
 UserSchema.statics.findOneUser = async function (telegramId) {

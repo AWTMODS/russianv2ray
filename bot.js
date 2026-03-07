@@ -67,6 +67,38 @@ class TelegramBot {
         return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=tls&fp=${fp}&alpn=${alpn}#${tag}`;
     }
 
+
+    async sendTrialExpiryReminders() {
+        const now = new Date();
+        const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        const users = await User.find({
+            subscriptionStatus: 'trial',
+            trialUsed: true,
+            keyExpiry: { $gt: now, $lte: in24h },
+            trialExpiryReminderSent: { $ne: true }
+        });
+
+        for (const user of users) {
+            try {
+                await this.bot.telegram.sendMessage(
+                    user.telegramId,
+                    '⏰ *Напоминание*\n\nЧерез 24 часа ваш пробный период истекает.',
+                    { parse_mode: 'Markdown' }
+                );
+                user.trialExpiryReminderSent = true;
+                await user.save();
+            } catch (e) {
+                console.error('[trial_reminder] failed:', user.telegramId, e.message);
+            }
+        }
+    }
+
+    startTrialReminderJob() {
+        this.sendTrialExpiryReminders().catch(console.error);
+        setInterval(() => this.sendTrialExpiryReminders().catch(console.error), 60 * 60 * 1000);
+    }
+
     setupHandlers() {
         this.bot.start(async (ctx) => {
             try {
@@ -119,7 +151,9 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 const menuText = '*Главное меню* 🏠\nВыберите действие:';
                 const keyboard = Markup.inlineKeyboard([
                     [Markup.button.callback('🔗 Подключить VPN', 'get_trial_key')],
-                    [Markup.button.callback('💎 Купить подписку', 'buy_premium')]
+                    [Markup.button.callback('💎 Купить подписку', 'buy_premium')],
+                    [Markup.button.callback('⚙️ Инструкция', 'show_instruction')]
+
                 ]);
 
                 if (fs.existsSync(this.mainMenuBannerPath)) {
@@ -164,6 +198,11 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
         this.bot.action(/check_payment_(.+)/, async (ctx) => await this.handleCheckPayment(ctx));
         this.bot.action('cancel_payment', async (ctx) => await ctx.reply('Оплата отменена.'));
+        this.bot.action('show_instruction', async (ctx) => await this.handleInstruction(ctx));
+        this.bot.command('stats', async (ctx) => {
+            await this.handleAdminStats(ctx);
+        });
+
     }
 
     async handleTrialKey(ctx) {
@@ -228,6 +267,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 }
 
                 user.trialUsed = true;
+                user.trialExpiryReminderSent = false;
                 user.subscriptionStatus = 'trial';
                 user.keyExpiry = new Date(expiryTime);
                 user.uuid = uuid;
@@ -324,7 +364,9 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         const text = '*Главное меню* 🏠\nВыберите действие:';
         const keyboard = Markup.inlineKeyboard([
             [Markup.button.callback('🔗 Подключиться', 'get_trial_key')],
-            [Markup.button.callback('💎 Купить Premium', 'buy_premium')]
+            [Markup.button.callback('💎 Купить Premium', 'buy_premium')],
+            [Markup.button.callback('⚙️ Инструкция', 'show_instruction')]
+
         ]);
 
         try {
@@ -582,6 +624,63 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         }
     }
 
+    async handleAdminStats(ctx) {
+        try {
+            const adminIds = String(process.env.ADMIN_CHAT_IDS || '')
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            const requesterId = String(ctx.from.id);
+            if (!adminIds.includes(requesterId)) {
+                return await ctx.reply('⛔ Access denied.');
+            }
+
+
+            const totalUsers = await User.countDocuments({});
+            const trialUsers = await User.countDocuments({ subscriptionStatus: 'trial' });
+            const premiumUsers = await User.countDocuments({ subscriptionStatus: 'premium' });
+            const freeUsers = await User.countDocuments({ subscriptionStatus: 'free' });
+
+            await ctx.reply(
+                `📊 *Bot Stats*\n\n` +
+                `👥 Total users: *${totalUsers}*\n` +
+                `🆓 Free: *${freeUsers}*\n` +
+                `🧪 Trial: *${trialUsers}*\n` +
+                `💎 Premium: *${premiumUsers}*`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            console.error('Admin stats error:', err);
+            await ctx.reply('❌ Failed to fetch stats.');
+        }
+    }
+
+
+    async handleInstruction(ctx) {
+        const text =
+            '*Инструкция для всех устройств*\n\n' +
+            'Android - https://telegra.ph/Vless---Android-08-16\n' +
+            'IPhone, Ipad - https://telegra.ph/Vless---MacOS-08-16\n' +
+            'Mac - https://telegra.ph/Vless---MacOS-08-16\n' +
+            'Windows - https://telegra.ph/Vless---Windows-08-19\n\n' +
+            'Telegraph (https://telegra.ph/Vless---Android-08-16)\n' +
+            'Vless - Android\n' +
+            'Скачайте V2RayTun - https://play.google.com/store/apps/details?id=com.v2raytun.android\n' +
+            '2. Копируем ключ из телеграм бота';
+
+        const keyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('🔙 Назад', 'return_main')]
+        ]);
+
+        try {
+            await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+        } catch (e) {
+            await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+        }
+    }
+
+
 
     setupWebhook() {
         this.app.post('/webhook/platega', async (req, res) => {
@@ -756,6 +855,8 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
             console.log('\n🤖 Launching Telegram bot...');
             await this.bot.launch();
+            this.startTrialReminderJob();
+
             console.log('✅ Bot started successfully!');
             console.log('\n✨ Bot is ready to accept commands!\n');
 
