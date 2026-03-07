@@ -36,16 +36,14 @@ class PlategaPaymentService {
                 return { success: false, error: 'Platega credentials not configured' };
             }
 
-            const amountInKopecks = Math.round(Number(amount) * 100);
+            const amountValue = Math.round(amount);
+
             const externalId = `user_${userId}_${Date.now()}`;
 
             // Platega expects enum value, not "card" string.
             const command = {
                 paymentMethod: Number(process.env.PLATEGA_PAYMENT_METHOD || 2),
-                paymentDetails: {
-                    amount: amountInKopecks,
-                    currency: 'RUB'
-                },
+                paymentDetails: { amount: amountValue, currency: 'RUB' },
                 description: description,
                 payload: externalId,
                 externalId: externalId,
