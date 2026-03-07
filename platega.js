@@ -32,41 +32,30 @@ class PlategaPaymentService {
             const amountInKopecks = Math.round(amount * 100);
 
             const payload = {
-                paymentMethod: 'card', // Can also be 'sbp' for Fast Payment System
-                paymentDetails: {
-                    amount: amountInKopecks,
-                    currency: 'RUB'
-                },
-                description: description,
-                externalId: `user_${userId}_${Date.now()}`, // Unique transaction ID
-                returnUrl: returnUrl || `${process.env.WEBHOOK_BASE_URL}/payment/success`,
+                paymentMethod: 'card',
+                paymentDetails: { amount: amountInKopecks, currency: 'RUB' },
+                description,
+                externalId: `user_${userId}_${Date.now()}`,
+                return: returnUrl || `${process.env.WEBHOOK_BASE_URL}/payment/success`,
                 failedUrl: failedUrl || `${process.env.WEBHOOK_BASE_URL}/payment/failed`,
                 callbackUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/platega`,
-                metadata: {
-                    userId: userId,
-                    timestamp: new Date().toISOString()
-                }
+                metadata: { userId, timestamp: new Date().toISOString() }
             };
 
             const response = await axios.post(
-                `${this.baseUrl}/api/v1/transactions`,
+                `${this.baseUrl}/transaction/process`,
                 payload,
-                {
-                    headers: {
-                        'X-MerchantId': this.merchantId,
-                        'X-Secret': this.secret,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers: { 'X-MerchantId': this.merchantId, 'X-Secret': this.secret, 'Content-Type': 'application/json' } }
             );
 
-            if (response.data && response.data.paymentUrl) {
+            if (response.data && response.data.redirect) {
                 return {
                     success: true,
-                    paymentUrl: response.data.paymentUrl,
+                    paymentUrl: response.data.redirect,
                     transactionId: response.data.transactionId || response.data.id,
                     externalId: payload.externalId
                 };
+
             } else {
                 return {
                     success: false,
@@ -94,14 +83,10 @@ class PlategaPaymentService {
             }
 
             const response = await axios.get(
-                `${this.baseUrl}/api/v1/transactions/${transactionId}`,
-                {
-                    headers: {
-                        'X-MerchantId': this.merchantId,
-                        'X-Secret': this.secret
-                    }
-                }
+                `${this.baseUrl}/transaction/${transactionId}`,
+                { headers: { 'X-MerchantId': this.merchantId, 'X-Secret': this.secret } }
             );
+
 
             if (response.data) {
                 return {
