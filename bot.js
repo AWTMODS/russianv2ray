@@ -1,3 +1,6 @@
+
+
+module.exports = TelegramBot;
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const { v4: uuidv4 } = require('uuid');
@@ -168,9 +171,11 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 }
 
             } catch (err) {
-                console.error('❌ Start command error:', err);
+                const errorId = Date.now();
+                console.error(`[Error ID: ${errorId}] Start command error:`, err);
                 console.error('Error stack:', err.stack);
                 console.error('Error details:', {
+                    errorId,
                     message: err.message,
                     name: err.name,
                     userId: ctx.from ? ctx.from.id : undefined,
@@ -178,17 +183,20 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 });
 
                 // Send a more helpful error message
-                let errorMessage = '❌ Произошла ошибка при запуске бота.\n\n';
+                let errorMessage = '? ????????? ?????? ??? ??????? ????.\n\n';
 
-                if (err.name === 'MongooseError' || err.name === 'MongoError') {
-                    errorMessage += 'Проблема с подключением к базе данных. Пожалуйста, попробуйте позже.';
+                if (
+                    /mongoose|mongo/i.test(err.name || '') ||
+                    /(mongodb|mongo|server selection|econnrefused|timed out)/i.test(err.message || '')
+                ) {
+                    errorMessage += '???????? ? ???????????? ? ???? ??????. ??????????, ?????????? ?????.';
                 } else if (err.message && err.message.includes('ENOENT')) {
-                    errorMessage += 'Отсутствует необходимый файл. Обратитесь в поддержку.';
+                    errorMessage += '??????????? ??????????? ????. ?????????? ? ?????????.';
                 } else {
-                    errorMessage += 'Пожалуйста, попробуйте позже или обратитесь в поддержку.';
+                    errorMessage += '??????????, ?????????? ????? ??? ?????????? ? ?????????.';
                 }
 
-                errorMessage += `\n\n🆔 ID ошибки: ${Date.now()}`;
+                errorMessage += `\n\nID ??????: ${errorId}`;
 
                 ctx.reply(errorMessage).catch(replyErr => {
                     console.error('Failed to send error message:', replyErr);
@@ -309,31 +317,36 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     ...Markup.inlineKeyboard([
                         Markup.button.callback('💎 Купить Premium', 'buy_premium')
                     ])
-                });
-            } else {
-                ctx.reply(`❌ Не удалось создать ключ: ${result.msg}`);
-                console.error(result);
-            }
         } catch (err) {
-            console.error('❌ Trial key error:', err);
+            const errorId = Date.now();
+            console.error(`[Error ID: ${errorId}] Trial key error:`, err);
             console.error('Error stack:', err.stack);
             console.error('Error details:', {
+                errorId,
                 message: err.message,
                 name: err.name,
                 userId: ctx.from ? ctx.from.id : undefined
             });
 
-            let errorMessage = '❌ Произошла ошибка при создании пробного ключа.\n\n';
+            let errorMessage = '? ????????? ?????? ??? ???????? ???????? ?????.\n\n';
 
-            if (err.name === 'MongooseError' || err.name === 'MongoError') {
-                errorMessage += 'Проблема с базой данных. Попробуйте позже.';
+            if (
+                /mongoose|mongo/i.test(err.name || '') ||
+                /(mongodb|mongo|server selection|econnrefused|timed out)/i.test(err.message || '')
+            ) {
+                errorMessage += '???????? ? ????? ??????. ?????????? ?????.';
             } else if (err.message && err.message.includes('ECONNREFUSED')) {
-                errorMessage += 'Не удалось подключиться к панели. Обратитесь в поддержку.';
+                errorMessage += '?? ??????? ???????????? ? ??????. ?????????? ? ?????????.';
             } else {
-                errorMessage += 'Попробуйте позже или обратитесь в поддержку.';
+                errorMessage += '?????????? ????? ??? ?????????? ? ?????????.';
             }
 
-            errorMessage += `\n\n🆔 ID ошибки: ${Date.now()}`;
+            errorMessage += `\n\nID ??????: ${errorId}`;
+
+            ctx.reply(errorMessage).catch(replyErr => {
+                console.error('Failed to send error message:', replyErr);
+            });
+        }
 
             ctx.reply(errorMessage).catch(replyErr => {
                 console.error('Failed to send error message:', replyErr);
