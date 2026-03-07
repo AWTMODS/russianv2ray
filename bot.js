@@ -471,30 +471,117 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 data: statusResult.data
             });
 
-            if (statusResult.success) {
-                const statusEmoji = {
-                    pending: '⏳',
-                    success: '✅',
-                    failed: '❌',
-                    cancelled: '🚫'
-                };
-
-                await ctx.reply(
-                    `${statusEmoji[normalizedStatus] || '❓'} *Статус платежа*\n\n` +
-                    `ID: \`${transactionId}\`\n` +
-                    `Статус: ${statusResult.status}\n` +
-                    `Нормализованный: ${normalizedStatus}\n\n` +
-                    (normalizedStatus === 'pending' ? 'Ожидаем подтверждения оплаты...' : ''),
-                    { parse_mode: 'Markdown' }
-                );
-            } else {
+            if (!statusResult.success) {
                 await ctx.reply('Не удалось проверить статус платежа.');
+                return;
             }
+
+            const payment = await Payment.findOne({ transactionId });
+            if (!payment) {
+                await ctx.reply('Платеж не найден в базе.');
+                return;
+            }
+
+            const user = await User.findOne({ telegramId: payment.userId });
+            if (!user) {
+                await ctx.reply('Пользователь платежа не найден.');
+                return;
+            }
+
+            // sync DB status
+            payment.status = normalizedStatus;
+            if (normalizedStatus === 'success' && !payment.completedAt) {
+                payment.completedAt = new Date();
+            }
+            await payment.save();
+
+            // Fallback activation path when webhook is delayed/missing
+            if (normalizedStatus === 'success') {
+                if (payment.metadata && payment.metadata.keyIssued) {
+                    this.logStep(traceId, 'Key already issued, skip manual activation', {
+                        transactionId
+                    });
+                } else {
+                    this.logStep(traceId, 'Manual success -> activating premium', {
+                        transactionId,
+                        userId: user.telegramId
+                    });
+
+                    const days = payment.subscriptionMonths * 30;
+                    const newExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
+                    const newUuid = uuidv4();
+                    const newEmail = `premium_${user.telegramId}_${Date.now()}`;
+
+                    const result = await api.addClient(
+                        { uuid: newUuid, email: newEmail },
+                        parseInt(process.env.PREMIUM_INBOUND_ID, 10),
+                        newExpiry
+                    );
+
+                    this.logStep(traceId, 'Manual addClient result', { result });
+
+                    if (result.success) {
+                        user.subscriptionStatus = 'premium';
+                        user.keyExpiry = new Date(newExpiry);
+                        user.uuid = newUuid;
+                        user.email = newEmail;
+                        user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
+                        user.lastPaymentStatus = 'success';
+                        await user.save();
+
+                        payment.metadata = {
+                            ...(payment.metadata || {}),
+                            keyIssued: true,
+                            keyIssuedAt: new Date().toISOString(),
+                            keyIssuedBy: 'manual_check'
+                        };
+                        await payment.save();
+
+                        const host = this.getHost();
+                        const vlessLink = `vless://${newUuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_Premium_${user.firstName || 'User'}`;
+
+                        await this.bot.telegram.sendMessage(
+                            user.telegramId,
+                            `🎉 *Оплата подтверждена!*\n\n` +
+                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n\n` +
+                            `🔑 *Ваш ключ:*\n\`${vlessLink}\`\n\n` +
+                            `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
+                            { parse_mode: 'Markdown' }
+                        );
+
+                        this.logStep(traceId, 'Manual activation completed and key sent', {
+                            userId: user.telegramId
+                        });
+                    } else {
+                        await this.bot.telegram.sendMessage(
+                            user.telegramId,
+                            '⚠️ Оплата подтверждена, но не удалось выдать ключ. Напишите в поддержку.'
+                        );
+                    }
+                }
+            }
+
+            const statusEmoji = {
+                pending: '⏳',
+                success: '✅',
+                failed: '❌',
+                cancelled: '🚫'
+            };
+
+            await ctx.reply(
+                `${statusEmoji[normalizedStatus] || '❓'} *Статус платежа*\n\n` +
+                `ID: \`${transactionId}\`\n` +
+                `Статус: ${statusResult.status}\n` +
+                `Нормализованный: ${normalizedStatus}\n\n` +
+                (normalizedStatus === 'pending' ? 'Ожидаем подтверждения оплаты...' : ''),
+                { parse_mode: 'Markdown' }
+            );
         } catch (err) {
             console.error(`[${traceId}] Payment status check error:`, err);
             await ctx.reply('Ошибка при проверке статуса.');
         }
     }
+
 
     setupWebhook() {
         this.app.post('/webhook/platega', async (req, res) => {
