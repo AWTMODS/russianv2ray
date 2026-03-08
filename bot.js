@@ -58,14 +58,19 @@ class TelegramBot {
     }
 
     buildTrialVlessLink(uuid, firstName = 'user') {
-        const host = process.env.VLESS_HOST || '185.115.33.254';
+        const host = process.env.VLESS_HOST;
         const port = process.env.VLESS_PORT || '443';
         const fp = process.env.VLESS_FP || 'chrome';
-        const alpn = encodeURIComponent(process.env.VLESS_ALPN || 'h2,http/1.1');
-        const tag = encodeURIComponent(process.env.VLESS_TAG || `Portal_${firstName}`);
+        const sni = encodeURIComponent(process.env.VLESS_SNI || 'github.com');
+        const pbk = process.env.VLESS_PBK;
+        const sid = encodeURIComponent(process.env.VLESS_SID || '');
+        const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
+        const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
+        const tag = encodeURIComponent(process.env.VLESS_TAG || 'portal-portalvpn');
 
-        return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=tls&fp=${fp}&alpn=${alpn}#${tag}`;
+        return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=reality&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}#${tag}`;
     }
+
 
 
     async sendTrialExpiryReminders() {
@@ -579,8 +584,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         };
                         await payment.save();
 
-                        const host = this.getHost();
-                        const vlessLink = `vless://${newUuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_Premium_${user.firstName || 'User'}`;
+                        const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
 
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
@@ -774,8 +778,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
                         await user.save();
 
-                        const host = this.getHost();
-                        const vlessLink = `vless://${newUuid}@${host}:443?security=reality&type=grpc&fp=chrome&sni=google.com&serviceName=grpc#Portal_Premium_${user.firstName || 'User'}`;
+                        const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
 
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
