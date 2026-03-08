@@ -254,7 +254,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
             });
 
             const result = await api.addClient(
-                { uuid, email },
+                { uuid, email, flow: 'xtls-rprx-vision' },
                 parseInt(process.env.TRIAL_INBOUND_ID, 10),
                 expiryTime
             );
@@ -560,7 +560,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     const newEmail = `premium_${user.telegramId}_${Date.now()}`;
 
                     const result = await api.addClient(
-                        { uuid: newUuid, email: newEmail },
+                        { uuid: newUuid, email: newEmail, flow: 'xtls-rprx-vision' },
                         parseInt(process.env.PREMIUM_INBOUND_ID, 10),
                         newExpiry
                     );
@@ -763,7 +763,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     const newEmail = `premium_${effectiveUserId}_${Date.now()}`;
 
                     const result = await api.addClient(
-                        { uuid: newUuid, email: newEmail },
+                        { uuid: newUuid, email: newEmail, flow: 'xtls-rprx-vision' },
                         parseInt(process.env.PREMIUM_INBOUND_ID, 10),
                         newExpiry
                     );

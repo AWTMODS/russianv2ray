@@ -17,12 +17,12 @@ class PanelAPI {
      * @returns {string} Normalized base URL
      */
     normalizeUrl(url) {
+        if (!url) throw new Error('PANEL_URL is not set');
         let baseUrl = url.replace(/\/$/, '');
-        if (baseUrl.endsWith('/panel')) {
-            baseUrl = baseUrl.slice(0, -6);
-        }
+        if (baseUrl.endsWith('/panel')) baseUrl = baseUrl.slice(0, -6);
         return baseUrl;
     }
+
 
     /**
      * Login to 3X-UI panel
@@ -76,6 +76,7 @@ class PanelAPI {
                 clients: [{
                     id: user.uuid,
                     email: user.email,
+                    flow: process.env.VLESS_FLOW || 'xtls-rprx-vision',
                     limitIp: 0,
                     totalGB: 0,
                     expiryTime: expiryTime,
@@ -130,6 +131,7 @@ class PanelAPI {
                     clients: [{
                         id: uuid,
                         email: email,
+                        flow: process.env.VLESS_FLOW || 'xtls-rprx-vision',
                         expiryTime: newExpiryTime,
                         enable: true,
                         limitIp: 0,
