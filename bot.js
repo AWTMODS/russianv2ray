@@ -321,16 +321,16 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     }
 
     async handleBuyPremium(ctx) {
-        const text = '*Тарифы Portal VPN:*\n\n🔹 1 месяц — 180₽\n⭐ 3 месяца — 400₽ (Выгода 140₽)\n👑 1 год — 900₽ (Выгода 50%)';
+        const text = '*Тарифы Portal VPN:*\n\n🔹 1 месяц — 99₽\n⭐ 3 месяца — 249₽ (Выгода 140₽)\n👑 1 год — 790₽ (Выгода 50%)';
         const keyboard = Markup.inlineKeyboard([
             [Markup.button.callback('Пробный период 📅', 'trial_info')],
             [
-                Markup.button.callback('1 Месяц - 180₽', 'select_1_month'),
-                Markup.button.callback('3 Месяца - 400₽', 'select_3_months')
+                Markup.button.callback('1 Месяц - 99₽', 'select_1_month'),
+                Markup.button.callback('3 Месяца - 249₽', 'select_3_months')
             ],
             [
-                Markup.button.callback('6 Месяцев - 750₽', 'select_6_months'),
-                Markup.button.callback('12 Месяцев - 900₽', 'select_1_year')
+                Markup.button.callback('6 Месяцев - 449₽', 'select_6_months'),
+                Markup.button.callback('12 Месяцев - 790₽', 'select_1_year')
             ],
             [Markup.button.callback('Вернуться ↩️', 'return_main')]
         ]);
