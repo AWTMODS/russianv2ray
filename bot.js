@@ -196,10 +196,10 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         this.bot.action('trial_info', async (ctx) => await this.handleTrialInfo(ctx));
         this.bot.action('return_main', async (ctx) => await this.handleReturnMain(ctx));
 
-        this.bot.action('select_1_month', async (ctx) => await this.handlePaymentSelection(ctx, 1, 180));
-        this.bot.action('select_3_months', async (ctx) => await this.handlePaymentSelection(ctx, 3, 400));
-        this.bot.action('select_6_months', async (ctx) => await this.handlePaymentSelection(ctx, 6, 750));
-        this.bot.action('select_1_year', async (ctx) => await this.handlePaymentSelection(ctx, 12, 900));
+        this.bot.action('select_1_month', async (ctx) => await this.handlePaymentSelection(ctx, 1, 99));
+        this.bot.action('select_3_months', async (ctx) => await this.handlePaymentSelection(ctx, 3, 249));
+        this.bot.action('select_6_months', async (ctx) => await this.handlePaymentSelection(ctx, 6, 449));
+        this.bot.action('select_1_year', async (ctx) => await this.handlePaymentSelection(ctx, 12, 790));
 
         this.bot.action(/check_payment_(.+)/, async (ctx) => await this.handleCheckPayment(ctx));
         this.bot.action('cancel_payment', async (ctx) => await ctx.reply('Оплата отменена.'));
