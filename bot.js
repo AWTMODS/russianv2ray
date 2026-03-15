@@ -77,24 +77,53 @@ class TelegramBot {
         const now = new Date();
         const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-        const users = await User.find({
+        // 1. Remind 24 hours before expiry
+        const expiringUsers = await User.find({
             subscriptionStatus: 'trial',
             trialUsed: true,
             keyExpiry: { $gt: now, $lte: in24h },
             trialExpiryReminderSent: { $ne: true }
         });
 
-        for (const user of users) {
+        for (const user of expiringUsers) {
             try {
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
-                    '⏰ *Напоминание*\n\nЧерез 24 часа ваш пробный период истекает.',
-                    { parse_mode: 'Markdown' }
+                    '⏰ *Напоминание*\n\nЧерез 24 часа ваш пробный период истекает.\nУспейте продлить подписку, чтобы не потерять доступ!',
+                    { 
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                    }
                 );
                 user.trialExpiryReminderSent = true;
                 await user.save();
             } catch (e) {
                 console.error('[trial_reminder] failed:', user.telegramId, e.message);
+            }
+        }
+
+        // 2. Remind on exact expiry
+        const expiredUsers = await User.find({
+            subscriptionStatus: 'trial',
+            trialUsed: true,
+            keyExpiry: { $lte: now },
+            trialExpiredReminderSent: { $ne: true }
+        });
+
+        for (const user of expiredUsers) {
+            try {
+                await this.bot.telegram.sendMessage(
+                    user.telegramId,
+                    '⚠️ *Ваш пробный период истек.*\n\nПродлите подписку, чтобы продолжить использование без ограничений!',
+                    { 
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                    }
+                );
+                user.trialExpiredReminderSent = true;
+                await user.save();
+            } catch (e) {
+                console.error('[trial_expired_reminder] failed:', user.telegramId, e.message);
             }
         }
     }
@@ -157,8 +186,10 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                 const keyboard = Markup.inlineKeyboard([
                     [Markup.button.callback('🔗 Подключить VPN', 'get_trial_key')],
                     [Markup.button.callback('💎 Купить подписку', 'buy_premium')],
-                    [Markup.button.callback('⚙️ Инструкция', 'show_instruction')]
-
+                    [
+                        Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
+                        Markup.button.callback('⚙️ Инструкция', 'show_instruction')
+                    ]
                 ]);
 
                 if (fs.existsSync(this.mainMenuBannerPath)) {
@@ -193,6 +224,12 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
         this.bot.action('get_trial_key', async (ctx) => await this.handleTrialKey(ctx));
         this.bot.action('buy_premium', async (ctx) => await this.handleBuyPremium(ctx));
+        this.bot.command('broadcast', async (ctx) => {
+            await this.handleBroadcastCommand(ctx);
+        });
+
+        this.bot.action(/bc_(all|premium|normal)_(\d+)/, async (ctx) => await this.executeBroadcastAction(ctx));
+        this.bot.action('bc_cancel', async (ctx) => await this.cancelBroadcastAction(ctx));
         this.bot.action('trial_info', async (ctx) => await this.handleTrialInfo(ctx));
         this.bot.action('return_main', async (ctx) => await this.handleReturnMain(ctx));
 
@@ -273,6 +310,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
                 user.trialUsed = true;
                 user.trialExpiryReminderSent = false;
+                user.trialExpiredReminderSent = false;
                 user.subscriptionStatus = 'trial';
                 user.keyExpiry = new Date(expiryTime);
                 user.uuid = uuid;
@@ -370,8 +408,10 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         const keyboard = Markup.inlineKeyboard([
             [Markup.button.callback('🔗 Подключиться', 'get_trial_key')],
             [Markup.button.callback('💎 Купить Premium', 'buy_premium')],
-            [Markup.button.callback('⚙️ Инструкция', 'show_instruction')]
-
+            [
+                Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
+                Markup.button.callback('⚙️ Инструкция', 'show_instruction')
+            ]
         ]);
 
         try {

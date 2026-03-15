@@ -71,6 +71,10 @@ const UserSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    trialExpiredReminderSent: {
+        type: Boolean,
+        default: false
+    },
     subscriptionStatus: {
         type: String,
         enum: ['trial', 'premium', 'free'],
