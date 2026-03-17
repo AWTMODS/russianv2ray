@@ -15,6 +15,7 @@ class TelegramBot {
         this.bot = new Telegraf(process.env.BOT_TOKEN);
         this.app = express();
         this.webhookPort = process.env.WEBHOOK_PORT || 3000;
+        this.pendingBroadcasts = new Map();
         this.bannerPath = path.join(__dirname, 'banner.jpg');
         this.mainMenuBannerPath = path.join(__dirname, 'main_menu.jpg');
 
@@ -700,6 +701,119 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         }
     }
 
+
+    async handleBroadcastCommand(ctx) {
+        try {
+            const adminIds = String(process.env.ADMIN_CHAT_IDS || '')
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            const requesterId = String(ctx.from.id);
+            if (!adminIds.includes(requesterId)) {
+                return await ctx.reply('⛔ Access denied.');
+            }
+
+            const text = ctx.message.text.replace(/^\/broadcast\s*/i, '').trim();
+            if (!text) {
+                return await ctx.reply(
+                    '📢 *Broadcast*\n\nUsage: `/broadcast Your message here`\n\nProvide the message text after the command.',
+                    { parse_mode: 'Markdown' }
+                );
+            }
+
+            const broadcastId = Date.now();
+            this.pendingBroadcasts.set(broadcastId, text);
+
+            // Auto-clean after 10 minutes
+            setTimeout(() => this.pendingBroadcasts.delete(broadcastId), 10 * 60 * 1000);
+
+            const preview = text.length > 100 ? text.slice(0, 100) + '...' : text;
+            await ctx.reply(
+                `📢 *Broadcast Preview*\n\n${preview}\n\nSelect target audience:`,
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard([
+                        [Markup.button.callback('👥 All users', `bc_all_${broadcastId}`)],
+                        [Markup.button.callback('💎 Premium users', `bc_premium_${broadcastId}`)],
+                        [Markup.button.callback('🆓 Free/Trial users', `bc_normal_${broadcastId}`)],
+                        [Markup.button.callback('❌ Cancel', 'bc_cancel')]
+                    ])
+                }
+            );
+        } catch (err) {
+            console.error('Broadcast command error:', err);
+            await ctx.reply('❌ Failed to initiate broadcast.');
+        }
+    }
+
+    async executeBroadcastAction(ctx) {
+        try {
+            const adminIds = String(process.env.ADMIN_CHAT_IDS || '')
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            const requesterId = String(ctx.from.id);
+            if (!adminIds.includes(requesterId)) {
+                return await ctx.answerCbQuery('⛔ Access denied.');
+            }
+
+            const match = ctx.match;
+            const target = match[1]; // all | premium | normal
+            const broadcastId = parseInt(match[2], 10);
+
+            const message = this.pendingBroadcasts.get(broadcastId);
+            if (!message) {
+                await ctx.answerCbQuery('⚠️ Broadcast expired or not found.');
+                return await ctx.editMessageText('⚠️ Broadcast session expired. Please run /broadcast again.');
+            }
+
+            this.pendingBroadcasts.delete(broadcastId);
+            await ctx.answerCbQuery('✅ Broadcast started...');
+            await ctx.editMessageText(`📤 Sending broadcast to *${target}* users...`, { parse_mode: 'Markdown' });
+
+            let query = {};
+            if (target === 'premium') {
+                query = { subscriptionStatus: 'premium' };
+            } else if (target === 'normal') {
+                query = { subscriptionStatus: { $in: ['free', 'trial'] } };
+            }
+
+            const users = await User.find(query, 'telegramId').lean();
+            let sent = 0, failed = 0;
+
+            for (const user of users) {
+                try {
+                    await this.bot.telegram.sendMessage(user.telegramId, message, { parse_mode: 'Markdown' });
+                    sent++;
+                } catch (e) {
+                    console.error(`Broadcast failed for ${user.telegramId}:`, e.message);
+                    failed++;
+                }
+                // Small delay to avoid Telegram rate limits
+                await new Promise(r => setTimeout(r, 50));
+            }
+
+            await ctx.reply(
+                `✅ *Broadcast complete*\n\n📨 Sent: *${sent}*\n❌ Failed: *${failed}*\n👥 Total targeted: *${users.length}*`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            console.error('Broadcast execution error:', err);
+            await ctx.reply('❌ Broadcast failed.');
+        }
+    }
+
+    async cancelBroadcastAction(ctx) {
+        try {
+            await ctx.answerCbQuery('Broadcast cancelled.');
+            await ctx.editMessageText('❌ Broadcast cancelled.');
+        } catch (err) {
+            console.error('Cancel broadcast error:', err);
+            await ctx.reply('Broadcast cancelled.');
+        }
+    }
 
     async handleInstruction(ctx) {
         const text =
