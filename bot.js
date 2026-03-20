@@ -91,7 +91,7 @@ class TelegramBot {
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
                     '⏰ *Напоминание*\n\nЧерез 24 часа ваш пробный период истекает.\nУспейте продлить подписку, чтобы не потерять доступ!',
-                    { 
+                    {
                         parse_mode: 'Markdown',
                         ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
                     }
@@ -116,7 +116,7 @@ class TelegramBot {
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
                     '⚠️ *Ваш пробный период истек.*\n\nПродлите подписку, чтобы продолжить использование без ограничений!',
-                    { 
+                    {
                         parse_mode: 'Markdown',
                         ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
                     }
@@ -185,8 +185,9 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
                 const menuText = '*Главное меню* 🏠\nВыберите действие:';
                 const keyboard = Markup.inlineKeyboard([
-                    [Markup.button.callback('🔗 Подключить VPN', 'get_trial_key')],
-                    [Markup.button.callback('💎 Купить подписку', 'buy_premium')],
+                    [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
+                    [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
+                    [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
                     [
                         Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
                         Markup.button.callback('⚙️ Инструкция', 'show_instruction')
