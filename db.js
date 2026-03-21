@@ -96,6 +96,14 @@ const UserSchema = new mongoose.Schema({
         status: String,
         createdAt: Date
     }],
+    referredBy: {
+        type: String,
+        index: true
+    },
+    referralCount: {
+        type: Number,
+        default: 0
+    },
     createdAt: {
         type: Date,
         default: Date.now

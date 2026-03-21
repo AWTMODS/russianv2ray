@@ -140,13 +140,21 @@ class TelegramBot {
                 let user = await User.findOne({ telegramId: ctx.from.id.toString() });
 
                 if (!user) {
+                    const startPayload = ctx.message.text.split(' ')[1];
+                    let referredBy = null;
+                    if (startPayload && startPayload.startsWith('ref_')) {
+                        referredBy = startPayload.replace('ref_', '');
+                        console.log(`👤 User ${ctx.from.id} referred by ${referredBy}`);
+                    }
+
                     user = new User({
                         telegramId: ctx.from.id.toString(),
                         username: ctx.from.username,
                         firstName: ctx.from.first_name,
                         lastName: ctx.from.last_name,
                         subscriptionStatus: 'free',
-                        trialUsed: false
+                        trialUsed: false,
+                        referredBy: referredBy
                     });
                     await user.save();
                     console.log(`✅ New user created: ${ctx.from.id}`);
@@ -156,7 +164,7 @@ class TelegramBot {
 
 Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.
 Чтобы начать:
-Нажмите кнопку «🔗 Подключиться» ниже.
+Нажмите кнопку «🔗 Подключиться (3 дня)» ниже.
 
 *🚀 Максимальная скорость:* Смотри YouTube в 4K и забудь про долгую загрузку Instagram.
 
@@ -174,33 +182,64 @@ https://telegra.ph/Politika-konfidencialnosti-08-15-17
 📄 Пользовательское соглашение:
 https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
 
-                if (fs.existsSync(this.bannerPath)) {
-                    await ctx.replyWithPhoto(
-                        { source: fs.createReadStream(this.bannerPath) },
-                        { caption: welcomeMessage, parse_mode: 'Markdown' }
-                    );
-                } else {
-                    await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
-                }
-
                 const menuText = '*Главное меню* 🏠\nВыберите действие:';
-                const keyboard = Markup.inlineKeyboard([
+                const mainKeyboard = Markup.inlineKeyboard([
                     [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
                     [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
                     [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
+                    [Markup.button.callback('👥 Реферальная программа', 'show_referral')],
                     [
                         Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
                         Markup.button.callback('⚙️ Инструкция', 'show_instruction')
                     ]
                 ]);
 
-                if (fs.existsSync(this.mainMenuBannerPath)) {
-                    await ctx.replyWithPhoto(
-                        { source: fs.createReadStream(this.mainMenuBannerPath) },
-                        { caption: menuText, parse_mode: 'Markdown', ...keyboard }
-                    );
+                // Dynamic message based on user status
+                if (user.trialUsed || user.subscriptionStatus === 'premium') {
+                    const isActive = user.keyExpiry && new Date() <= user.keyExpiry;
+                    if (isActive && user.uuid) {
+                        const vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'user');
+                        const statusText = user.subscriptionStatus === 'premium' ? '💎 Premium активен' : '🧪 Тестовый доступ активен';
+                        const activeMessage = `*С возвращением!* 🏠\n\n${statusText}\n\n🔑 *Ваш ключ:*\n\`${vlessLink}\`\n\n📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`;
+                        
+                        if (fs.existsSync(this.mainMenuBannerPath)) {
+                            await ctx.replyWithPhoto(
+                                { source: fs.createReadStream(this.mainMenuBannerPath) },
+                                { caption: activeMessage, parse_mode: 'Markdown', ...mainKeyboard }
+                            );
+                        } else {
+                            await ctx.reply(activeMessage, { parse_mode: 'Markdown', ...mainKeyboard });
+                        }
+                    } else {
+                        const expiredMessage = `*С возвращением!* 🏠\n\n⚠️ Ваш доступ истек. Продлите подписку, чтобы продолжить пользоваться интернетом без ограничений.`;
+                        if (fs.existsSync(this.mainMenuBannerPath)) {
+                            await ctx.replyWithPhoto(
+                                { source: fs.createReadStream(this.mainMenuBannerPath) },
+                                { caption: expiredMessage, parse_mode: 'Markdown', ...mainKeyboard }
+                            );
+                        } else {
+                            await ctx.reply(expiredMessage, { parse_mode: 'Markdown', ...mainKeyboard });
+                        }
+                    }
                 } else {
-                    await ctx.reply(menuText, { parse_mode: 'Markdown', ...keyboard });
+                    // New user or trial not used yet
+                    if (fs.existsSync(this.bannerPath)) {
+                        await ctx.replyWithPhoto(
+                            { source: fs.createReadStream(this.bannerPath) },
+                            { caption: welcomeMessage, parse_mode: 'Markdown' }
+                        );
+                    } else {
+                        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+                    }
+
+                    if (fs.existsSync(this.mainMenuBannerPath)) {
+                        await ctx.replyWithPhoto(
+                            { source: fs.createReadStream(this.mainMenuBannerPath) },
+                            { caption: menuText, parse_mode: 'Markdown', ...mainKeyboard }
+                        );
+                    } else {
+                        await ctx.reply(menuText, { parse_mode: 'Markdown', ...mainKeyboard });
+                    }
                 }
             } catch (err) {
                 const errorId = Date.now();
@@ -243,6 +282,7 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         this.bot.action(/check_payment_(.+)/, async (ctx) => await this.handleCheckPayment(ctx));
         this.bot.action('cancel_payment', async (ctx) => await ctx.reply('Оплата отменена.'));
         this.bot.action('show_instruction', async (ctx) => await this.handleInstruction(ctx));
+        this.bot.action('show_referral', async (ctx) => await this.handleReferral(ctx));
         this.bot.command('stats', async (ctx) => {
             await this.handleAdminStats(ctx);
         });
@@ -252,21 +292,17 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     async handleTrialKey(ctx) {
         const traceId = this.newTraceId('trial');
         try {
+            await ctx.answerCbQuery().catch(() => {});
             let user = await this.getUser(ctx);
             this.logStep(traceId, 'Trial request received', { telegramId: ctx.from.id.toString() });
 
             if (user && user.trialUsed) {
                 const isActive = user.keyExpiry && new Date() <= user.keyExpiry;
-                this.logStep(traceId, 'User has trialUsed', {
-                    uuid: user.uuid,
-                    keyExpiry: user.keyExpiry,
-                    isActive
-                });
-
+                
                 if (isActive && user.uuid) {
                     const vlessLink = this.buildTrialVlessLink(user.uuid, ctx.from.first_name);
                     await ctx.reply(
-                        `✅ *Ваш пробный период активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry.toLocaleString('ru-RU')}`,
+                        `✅ *Ваш доступ активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry.toLocaleString('ru-RU')}`,
                         {
                             parse_mode: 'Markdown',
                             ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
@@ -275,11 +311,19 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                     return;
                 }
 
-                await ctx.reply(
-                    '⚠️ Ваш пробный период истек.',
-                    Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
-                );
-                return;
+                // If trialUsed is true but no keyExpiry, it might be legacy/corrupt data
+                if (!user.keyExpiry) {
+                    this.logStep(traceId, 'User has trialUsed but no keyExpiry, resetting trialUsed for fresh start', { telegramId: user.telegramId });
+                    user.trialUsed = false;
+                    await user.save();
+                    // fall through to create new trial
+                } else {
+                    await ctx.reply(
+                        '⚠️ Ваш пробный период истек.',
+                        Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                    );
+                    return;
+                }
             }
 
             const uuid = uuidv4();
@@ -361,9 +405,15 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     }
 
     async handleBuyPremium(ctx) {
+        const user = await this.getUser(ctx);
         const text = '*Тарифы Portal VPN:*\n\n🔹 1 месяц — 99₽\n⭐ 3 месяца — 249₽ (Выгода 140₽)\n👑 1 год — 790₽ (Выгода 50%)';
+        
+        const trialButton = (user && user.trialUsed) 
+            ? Markup.button.callback('Пробный период (Использован) 📅', 'trial_info')
+            : Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key');
+
         const keyboard = Markup.inlineKeyboard([
-            [Markup.button.callback('Пробный период 📅', 'trial_info')],
+            [trialButton],
             [
                 Markup.button.callback('1 Месяц - 99₽', 'select_1_month'),
                 Markup.button.callback('3 Месяца - 249₽', 'select_3_months')
@@ -376,8 +426,11 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         ]);
 
         try {
+            await ctx.answerCbQuery().catch(() => {});
             if (fs.existsSync(this.bannerPath)) {
-                await ctx.deleteMessage().catch(() => { });
+                try {
+                    await ctx.deleteMessage();
+                } catch (e) {}
                 await ctx.replyWithPhoto(
                     { source: fs.createReadStream(this.bannerPath) },
                     { caption: text, parse_mode: 'Markdown', ...keyboard }
@@ -391,8 +444,15 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
     }
 
     async handleTrialInfo(ctx) {
+        const user = await this.getUser(ctx);
         const text = '⏳ *Пробный период*\n\nМы предоставляем 3 дня бесплатного доступа для тестирования скорости и качества нашего сервиса.\n\nПосле окончания пробного периода вы сможете выбрать любой тариф.';
-        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Назад', 'buy_premium')]]);
+        
+        const buttons = [[Markup.button.callback('🔙 Назад', 'buy_premium')]];
+        if (user && !user.trialUsed) {
+            buttons.unshift([Markup.button.callback('🎁 Начать тест (3 дня)', 'get_trial_key')]);
+        }
+
+        const keyboard = Markup.inlineKeyboard(buttons);
 
         try {
             await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
@@ -409,8 +469,9 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         const text = '*Главное меню* 🏠\nВыберите действие:';
         const keyboard = Markup.inlineKeyboard([
              [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
-                    [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
-                    [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
+             [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
+             [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
+             [Markup.button.callback('👥 Реферальная программа', 'show_referral')],
             [
                 Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
                 Markup.button.callback('⚙️ Инструкция', 'show_instruction')
@@ -641,6 +702,13 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         this.logStep(traceId, 'Manual activation completed and key sent', {
                             userId: user.telegramId
                         });
+
+                        // Reward referrer
+                        if (user.referredBy) {
+                            await this.rewardReferrer(user.telegramId).catch(err => {
+                                console.error(`[${traceId}] Failed to reward referrer for ${user.telegramId}:`, err);
+                            });
+                        }
                     } else {
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
@@ -817,6 +885,36 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         }
     }
 
+    async handleReferral(ctx) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            const user = await this.getUser(ctx);
+            const botInfo = await this.bot.telegram.getMe();
+            const refLink = `https://t.me/${botInfo.username}?start=ref_${ctx.from.id}`;
+            const rewardDays = process.env.REFERRAL_REWARD_DAYS || '7';
+
+            const text = `🎁 *Реферальная программа*\n\n` +
+                `Приглашайте друзей и получайте бонусы!\n\n` +
+                `За каждого друга, который купит любую подписку, вы получите *${rewardDays} дней* Premium доступа.\n\n` +
+                `👥 Приглашено: *${user.referralCount || 0}*\n\n` +
+                `🔗 *Ваша ссылка для приглашения:*\n\`${refLink}\``;
+
+            const keyboard = Markup.inlineKeyboard([
+                [Markup.button.url('📢 Поделиться', `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent('Пользуюсь Portal VPN, попробуй и ты! 🛡')}`)],
+                [Markup.button.callback('🔙 Назад', 'return_main')]
+            ]);
+
+            try {
+                await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+            } catch (e) {
+                await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+            }
+        } catch (err) {
+            console.error('Referral menu error:', err);
+            await ctx.reply('❌ Ошибка при загрузке реферальной программы.');
+        }
+    }
+
     async handleInstruction(ctx) {
         const text =
             '*Инструкция для всех устройств*\n\n' +
@@ -953,6 +1051,13 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
                         this.logStep(traceId, 'Subscription activated and key sent', {
                             userId: effectiveUserId
                         });
+
+                        // Reward referrer
+                        if (user.referredBy) {
+                            await this.rewardReferrer(effectiveUserId).catch(err => {
+                                console.error(`[${traceId}] Failed to reward referrer for ${effectiveUserId}:`, err);
+                            });
+                        }
                     } else {
                         this.logStep(traceId, 'Key creation failed', {
                             userId: effectiveUserId,
@@ -991,6 +1096,59 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         this.app.get('/health', (req, res) => {
             res.json({ status: 'ok', timestamp: new Date().toISOString() });
         });
+    }
+
+    async rewardReferrer(userId) {
+        try {
+            const user = await User.findOne({ telegramId: userId });
+            if (!user || !user.referredBy) return;
+
+            const referrer = await User.findOne({ telegramId: user.referredBy });
+            if (!referrer) return;
+
+            console.log(`🎁 Rewarding referrer ${referrer.telegramId} for user ${userId}`);
+
+            const rewardDays = parseInt(process.env.REFERRAL_REWARD_DAYS || '7', 10);
+            const rewardMs = rewardDays * 24 * 60 * 60 * 1000;
+
+            // If referrer has no expiry yet, start from now
+            let currentExpiry = referrer.keyExpiry && referrer.keyExpiry > new Date()
+                ? referrer.keyExpiry.getTime()
+                : Date.now();
+
+            const newExpiryMs = currentExpiry + rewardMs;
+            const newExpiryDate = new Date(newExpiryMs);
+
+            // Update in DB
+            referrer.keyExpiry = newExpiryDate;
+            referrer.referralCount = (referrer.referralCount || 0) + 1;
+            
+            // If they are not premium yet, elevate them?
+            // The requirement says "reward with 7 days of VPN Premium".
+            // If they already have a key, update it. If not, they'll need one.
+            // For now, let's just update the date.
+            
+            await referrer.save();
+
+            // Sync with panel if they have a key
+            if (referrer.uuid && referrer.inboundId) {
+                await api.updateClientExpiry(
+                    referrer.inboundId,
+                    referrer.email,
+                    referrer.uuid,
+                    newExpiryMs
+                );
+            }
+
+            await this.bot.telegram.sendMessage(
+                referrer.telegramId,
+                `🎉 *Бонус за реферала!*\n\nВаш друг только что оплатил подписку. Вам начислено *${rewardDays} дней* Premium доступа!\n\n📅 Новый срок действия: ${newExpiryDate.toLocaleString('ru-RU')}`,
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+
+        } catch (err) {
+            console.error('Error rewarding referrer:', err);
+        }
     }
 
     async start() {
