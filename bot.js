@@ -75,13 +75,13 @@ class TelegramBot {
         const port = process.env.VLESS_PORT || '443';
         const fp = process.env.VLESS_FP || 'chrome';
         const sni = encodeURIComponent(process.env.VLESS_SNI || 'github.com');
-        const pbk = process.env.VLESS_PBK;
+        const pbk = encodeURIComponent(process.env.VLESS_PBK || '');
         const sid = encodeURIComponent(process.env.VLESS_SID || '');
         const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
         const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
         const tag = encodeURIComponent(process.env.VLESS_TAG || 'portal-portalvpn');
 
-        return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=reality&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}#${tag}`;
+        return `vless://${uuid}@${host}:${port}?type=tcp&security=reality&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}#${tag}`;
     }
 
     buildSubscriptionLink(subId) {
@@ -195,17 +195,18 @@ class TelegramBot {
                 const vlessLink = (isActive && user.uuid) ? this.buildTrialVlessLink(user.uuid, user.firstName || 'user') : null;
                 const subLink = (isActive && user.subId) ? this.buildSubscriptionLink(user.subId) : null;
 
-                let subscriptionLine = '🤑 У вас еще нет активной подписки, но вы ее можете оформить по кнопке снизу.';
+                let subscriptionLine = '📢 У вас еще нет активной подписки, но вы ее можете оформить по кнопке снизу.';
                 if (isActive) {
                     subscriptionLine = `🤑 *Ваша подписка:*\n\n` +
                         `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                         `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\``;
                 }
 
-                const welcomeMessage = `🎆 *Добро пожаловать!*
+                const welcomeMessage = `👋 *Добро пожаловать!*
 Надёжный VPN без лагов, без ограничений по скорости и трафику.
 🔒 [Политика конфиденциальности](https://telegra.ph/Politika-konfidencialnosti-08-15-17)
 📄 [Пользовательское соглашение](https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10)
+
 ${subscriptionLine}
 
 💭 Нужна помощь? [Напишите нам!](https://t.me/portalvpnhelp)`;
@@ -686,12 +687,14 @@ ${subscriptionLine}
                         await payment.save();
 
                         const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        const subLink = user.subId ? this.buildSubscriptionLink(user.subId) : null;
 
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
                             `🎉 *Оплата подтверждена!*\n\n` +
                             `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n\n` +
-                            `🔑 *Ваш ключ:*\n\`${vlessLink}\`\n\n` +
+                            `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
+                            `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
                             { parse_mode: 'Markdown' }
                         );
@@ -739,9 +742,14 @@ ${subscriptionLine}
     async handleAdminMenu(ctx) {
         try {
             if (!this.isAdmin(ctx.from.id)) {
-                return await ctx.answerCbQuery('⛔ Access denied.');
+                if (ctx.callbackQuery) {
+                    return await ctx.answerCbQuery('⛔ Access denied.');
+                }
+                return await ctx.reply('⛔ Access denied.');
             }
-            await ctx.answerCbQuery().catch(() => {});
+            if (ctx.callbackQuery) {
+                await ctx.answerCbQuery().catch(() => {});
+            }
 
             const text = '👑 *Панель управления*\n\nВыберите действие:';
             const keyboard = Markup.inlineKeyboard([
@@ -766,7 +774,9 @@ ${subscriptionLine}
             if (!this.isAdmin(ctx.from.id)) {
                 return await ctx.reply('⛔ Access denied.');
             }
-            await ctx.answerCbQuery().catch(() => {});
+            if (ctx.callbackQuery) {
+                await ctx.answerCbQuery().catch(() => {});
+            }
 
             const totalUsers = await User.countDocuments({});
             const trialUsers = await User.countDocuments({ subscriptionStatus: 'trial' });
