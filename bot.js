@@ -274,6 +274,7 @@ ${subscriptionLine}
         this.bot.action('show_instruction', async (ctx) => await this.handleInstruction(ctx));
         this.bot.action('show_referral', async (ctx) => await this.handleReferral(ctx));
         this.bot.command('stats', async (ctx) => await this.handleAdminStats(ctx));
+        this.bot.command('admin', async (ctx) => await this.handleAdminMenu(ctx));
         this.bot.action('admin_menu', async (ctx) => await this.handleAdminMenu(ctx));
         this.bot.action('admin_stats', async (ctx) => await this.handleAdminStats(ctx));
         this.bot.action('admin_broadcast_init', async (ctx) => {
