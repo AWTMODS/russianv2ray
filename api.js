@@ -82,7 +82,7 @@ class PanelAPI {
                     expiryTime: expiryTime,
                     enable: true,
                     tgId: '',
-                    subId: ''
+                    subId: user.subId || ''
                 }]
             })
         };
@@ -154,6 +154,35 @@ class PanelAPI {
             return response.data;
         } catch (error) {
             console.error('Error updating client:', error.message);
+            return { success: false, msg: error.message };
+        }
+    }
+
+    /**
+     * Add a new inbound configuration to the panel
+     * @param {Object} inboundData - Inbound configuration data
+     * @returns {Promise<Object>} Result object
+     */
+    async addInbound(inboundData) {
+        if (!this.sessionCookie) {
+            const loggedIn = await this.login();
+            if (!loggedIn) return { success: false, msg: 'Login failed' };
+        }
+
+        const addUrl = `${this.baseUrl}/panel/api/inbounds/add`;
+        console.log(`Adding inbound: ${inboundData.remark}`);
+
+        try {
+            const response = await axios.post(addUrl, inboundData, {
+                headers: {
+                    'Cookie': this.sessionCookie,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('Error adding inbound:', error.message);
             return { success: false, msg: error.message };
         }
     }

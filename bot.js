@@ -16,8 +16,8 @@ class TelegramBot {
         this.app = express();
         this.webhookPort = process.env.WEBHOOK_PORT || 3000;
         this.pendingBroadcasts = new Map();
-        this.bannerPath = path.join(__dirname, 'banner.jpg');
-        this.mainMenuBannerPath = path.join(__dirname, 'main_menu.jpg');
+        this.bannerPath = path.join(__dirname, 'bannernew.jpg');
+        this.mainMenuBannerPath = path.join(__dirname, 'bannernew.jpg');
 
         this.setupMiddleware();
         this.setupHandlers();
@@ -58,6 +58,17 @@ class TelegramBot {
         return 'pending';
     }
 
+    getAdminIds() {
+        return String(process.env.ADMIN_CHAT_IDS || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+    }
+
+    isAdmin(chatId) {
+        return this.getAdminIds().includes(String(chatId));
+    }
+
     buildTrialVlessLink(uuid, firstName = 'user') {
         const host = process.env.VLESS_HOST;
         const port = process.env.VLESS_PORT || '443';
@@ -70,6 +81,18 @@ class TelegramBot {
         const tag = encodeURIComponent(process.env.VLESS_TAG || 'portal-portalvpn');
 
         return `vless://${uuid}@${host}:${port}?type=tcp&encryption=none&security=reality&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}#${tag}`;
+    }
+
+    buildSubscriptionLink(subId) {
+        if (!subId) return null;
+        const baseUrl = process.env.SUB_BASE_URL || 'https://sub.bearvpn.win/';
+        try {
+            const url = new URL(baseUrl);
+            url.pathname = path.join(url.pathname, subId).replace(/\\/g, '/');
+            return url.toString();
+        } catch (e) {
+            return `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${subId}`;
+        }
     }
 
 
@@ -154,92 +177,58 @@ class TelegramBot {
                         lastName: ctx.from.last_name,
                         subscriptionStatus: 'free',
                         trialUsed: false,
-                        referredBy: referredBy
+                        referredBy: referredBy,
+                        subId: crypto.randomBytes(8).toString('hex')
                     });
                     await user.save();
                     console.log(`✅ New user created: ${ctx.from.id}`);
                 }
 
-                const welcomeMessage = `*Portal — твой личный выход в свободный интернет.*
+                // Temporary: assign subId if missing for existing users
+                if (!user.subId) {
+                    user.subId = crypto.randomBytes(8).toString('hex');
+                    await user.save();
+                }
 
-Ваш доступ активирован. У вас есть 3 дня, чтобы протестировать полную скорость без ограничений.
-Чтобы начать:
-Нажмите кнопку «🔗 Подключиться (3 дня)» ниже.
+                const isActive = user && user.keyExpiry && new Date() <= user.keyExpiry;
+                const vlessLink = (isActive && user.uuid) ? this.buildTrialVlessLink(user.uuid, user.firstName || 'user') : null;
+                const subLink = (isActive && user.subId) ? this.buildSubscriptionLink(user.subId) : null;
 
-*🚀 Максимальная скорость:* Смотри YouTube в 4K и забудь про долгую загрузку Instagram.
+                let subscriptionLine = '🤑 У вас еще нет активной подписки, но вы ее можете оформить по кнопке снизу.';
+                if (isActive) {
+                    subscriptionLine = `🤑 *Ваша подписка:*\n\n` +
+                        `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
+                        `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\``;
+                }
 
-🛡 *Полная анонимность:* Мы не храним логи. Твой трафик зашифрован и невидим для провайдера.
+                const welcomeMessage = `🎆 *Добро пожаловать!*
+Надёжный VPN без лагов, без ограничений по скорости и трафику.
+🔒 [Политика конфиденциальности](https://telegra.ph/Politika-konfidencialnosti-08-15-17)
+📄 [Пользовательское соглашение](https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10)
+${subscriptionLine}
 
-*Наши преимущества:*
-• 3 дня бесплатного теста для всех новых пользователей.
-• Работает на iPhone, Android, ПК и Mac.
-• Стабильный протокол, который невозможно заблокировать.
-• Оплата любыми картами РФ и через СБП.
+💭 Нужна помощь? [Напишите нам!](https://t.me/portalvpnhelp)`;
 
-🔒 Политика конфиденциальности:
-https://telegra.ph/Politika-konfidencialnosti-08-15-17
-
-📄 Пользовательское соглашение:
-https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
-
-                const menuText = '*Главное меню* 🏠\nВыберите действие:';
-                const mainKeyboard = Markup.inlineKeyboard([
+                const buttons = [
                     [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
-                    [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
-                    [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
-                    [Markup.button.callback('👥 Реферальная программа', 'show_referral')],
-                    [
-                        Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
-                        Markup.button.callback('⚙️ Инструкция', 'show_instruction')
-                    ]
-                ]);
+                    [Markup.button.callback('🛒 Купить VPN', 'buy_premium')],
+                    [Markup.button.callback('💰 Заработать', 'show_referral')],
+                    [Markup.button.url('💬 О нас', 'https://t.me/portalvnp')]
+                ];
 
-                // Dynamic message based on user status
-                if (user.trialUsed || user.subscriptionStatus === 'premium') {
-                    const isActive = user.keyExpiry && new Date() <= user.keyExpiry;
-                    if (isActive && user.uuid) {
-                        const vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'user');
-                        const statusText = user.subscriptionStatus === 'premium' ? '💎 Premium активен' : '🧪 Тестовый доступ активен';
-                        const activeMessage = `*С возвращением!* 🏠\n\n${statusText}\n\n🔑 *Ваш ключ:*\n\`${vlessLink}\`\n\n📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`;
-                        
-                        if (fs.existsSync(this.mainMenuBannerPath)) {
-                            await ctx.replyWithPhoto(
-                                { source: fs.createReadStream(this.mainMenuBannerPath) },
-                                { caption: activeMessage, parse_mode: 'Markdown', ...mainKeyboard }
-                            );
-                        } else {
-                            await ctx.reply(activeMessage, { parse_mode: 'Markdown', ...mainKeyboard });
-                        }
-                    } else {
-                        const expiredMessage = `*С возвращением!* 🏠\n\n⚠️ Ваш доступ истек. Продлите подписку, чтобы продолжить пользоваться интернетом без ограничений.`;
-                        if (fs.existsSync(this.mainMenuBannerPath)) {
-                            await ctx.replyWithPhoto(
-                                { source: fs.createReadStream(this.mainMenuBannerPath) },
-                                { caption: expiredMessage, parse_mode: 'Markdown', ...mainKeyboard }
-                            );
-                        } else {
-                            await ctx.reply(expiredMessage, { parse_mode: 'Markdown', ...mainKeyboard });
-                        }
-                    }
+                if (this.isAdmin(ctx.from.id)) {
+                    buttons.push([Markup.button.callback('👑 Панель управления', 'admin_menu')]);
+                }
+
+                const mainKeyboard = Markup.inlineKeyboard(buttons);
+
+                if (fs.existsSync(this.bannerPath)) {
+                    await ctx.replyWithPhoto(
+                        { source: fs.createReadStream(this.bannerPath) },
+                        { caption: welcomeMessage, parse_mode: 'Markdown', ...mainKeyboard }
+                    );
                 } else {
-                    // New user or trial not used yet
-                    if (fs.existsSync(this.bannerPath)) {
-                        await ctx.replyWithPhoto(
-                            { source: fs.createReadStream(this.bannerPath) },
-                            { caption: welcomeMessage, parse_mode: 'Markdown' }
-                        );
-                    } else {
-                        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
-                    }
-
-                    if (fs.existsSync(this.mainMenuBannerPath)) {
-                        await ctx.replyWithPhoto(
-                            { source: fs.createReadStream(this.mainMenuBannerPath) },
-                            { caption: menuText, parse_mode: 'Markdown', ...mainKeyboard }
-                        );
-                    } else {
-                        await ctx.reply(menuText, { parse_mode: 'Markdown', ...mainKeyboard });
-                    }
+                    await ctx.reply(welcomeMessage, { parse_mode: 'Markdown', ...mainKeyboard });
                 }
             } catch (err) {
                 const errorId = Date.now();
@@ -283,8 +272,12 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         this.bot.action('cancel_payment', async (ctx) => await ctx.reply('Оплата отменена.'));
         this.bot.action('show_instruction', async (ctx) => await this.handleInstruction(ctx));
         this.bot.action('show_referral', async (ctx) => await this.handleReferral(ctx));
-        this.bot.command('stats', async (ctx) => {
-            await this.handleAdminStats(ctx);
+        this.bot.command('stats', async (ctx) => await this.handleAdminStats(ctx));
+        this.bot.action('admin_menu', async (ctx) => await this.handleAdminMenu(ctx));
+        this.bot.action('admin_stats', async (ctx) => await this.handleAdminStats(ctx));
+        this.bot.action('admin_broadcast_init', async (ctx) => {
+            await ctx.answerCbQuery().catch(() => {});
+            await ctx.reply('📢Введите текст для рассылки (или используйте команду /broadcast <текст>):');
         });
 
     }
@@ -467,16 +460,18 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         } catch (e) { }
 
         const text = '*Главное меню* 🏠\nВыберите действие:';
-        const keyboard = Markup.inlineKeyboard([
-             [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
-             [Markup.button.callback('◻️ Обход глушилок', 'buy_premium')],
-             [Markup.button.callback('💳 VPN (Ютуб без рекламы)', 'buy_premium')],
-             [Markup.button.callback('👥 Реферальная программа', 'show_referral')],
-            [
-                Markup.button.url('ℹ️ О нас', 'https://t.me/portalvnp'),
-                Markup.button.callback('⚙️ Инструкция', 'show_instruction')
-            ]
-        ]);
+        const buttons = [
+            [Markup.button.callback('🔑 Пробный период (3 дня)', 'get_trial_key')],
+            [Markup.button.callback('🛒 Купить VPN', 'buy_premium')],
+            [Markup.button.callback('💰 Заработать', 'show_referral')],
+            [Markup.button.url('💬 О нас', 'https://t.me/portalvnp')]
+        ];
+
+        if (this.isAdmin(ctx.from.id)) {
+            buttons.push([Markup.button.callback('👑 Панель управления', 'admin_menu')]);
+        }
+
+        const keyboard = Markup.inlineKeyboard(buttons);
 
         try {
             if (fs.existsSync(this.mainMenuBannerPath)) {
@@ -739,35 +734,62 @@ https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10`;
         }
     }
 
+    async handleAdminMenu(ctx) {
+        try {
+            if (!this.isAdmin(ctx.from.id)) {
+                return await ctx.answerCbQuery('⛔ Access denied.');
+            }
+            await ctx.answerCbQuery().catch(() => {});
+
+            const text = '👑 *Панель управления*\n\nВыберите действие:';
+            const keyboard = Markup.inlineKeyboard([
+                [Markup.button.callback('📊 Статистика', 'admin_stats')],
+                [Markup.button.callback('📢 Рассылка', 'admin_broadcast_init')],
+                [Markup.button.callback('🔙 Назад в меню', 'return_main')]
+            ]);
+
+            try {
+                await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+            } catch (e) {
+                await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+            }
+        } catch (err) {
+            console.error('Admin menu error:', err);
+            await ctx.reply('❌ Ошибка при открытии админ-панели.');
+        }
+    }
+
     async handleAdminStats(ctx) {
         try {
-            const adminIds = String(process.env.ADMIN_CHAT_IDS || '')
-                .split(',')
-                .map(s => s.trim())
-                .filter(Boolean);
-
-            const requesterId = String(ctx.from.id);
-            if (!adminIds.includes(requesterId)) {
+            if (!this.isAdmin(ctx.from.id)) {
                 return await ctx.reply('⛔ Access denied.');
             }
-
+            await ctx.answerCbQuery().catch(() => {});
 
             const totalUsers = await User.countDocuments({});
             const trialUsers = await User.countDocuments({ subscriptionStatus: 'trial' });
             const premiumUsers = await User.countDocuments({ subscriptionStatus: 'premium' });
             const freeUsers = await User.countDocuments({ subscriptionStatus: 'free' });
 
-            await ctx.reply(
-                `📊 *Bot Stats*\n\n` +
-                `👥 Total users: *${totalUsers}*\n` +
-                `🆓 Free: *${freeUsers}*\n` +
-                `🧪 Trial: *${trialUsers}*\n` +
-                `💎 Premium: *${premiumUsers}*`,
-                { parse_mode: 'Markdown' }
-            );
+            const text = `📊 *Статистика бота*\n\n` +
+                `👥 Всего пользователей: *${totalUsers}*\n` +
+                `🆓 Бесплатные: *${freeUsers}*\n` +
+                `🧪 Пробный период: *${trialUsers}*\n` +
+                `💎 Premium: *${premiumUsers}*`;
+
+            const keyboard = Markup.inlineKeyboard([
+                [Markup.button.callback('🔄 Обновить', 'admin_stats')],
+                [Markup.button.callback('🔙 Назад', 'admin_menu')]
+            ]);
+
+            try {
+                await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+            } catch (e) {
+                await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+            }
         } catch (err) {
             console.error('Admin stats error:', err);
-            await ctx.reply('❌ Failed to fetch stats.');
+            await ctx.reply('❌ Не удалось получить статистику.');
         }
     }
 
