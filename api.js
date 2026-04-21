@@ -219,6 +219,62 @@ class PanelAPI {
             return [];
         }
     }
+    
+    /**
+     * Delete an inbound from the panel
+     * @param {number} id - Inbound ID to delete
+     * @returns {Promise<Object>} Result object
+     */
+    async deleteInbound(id) {
+        if (!this.sessionCookie) {
+            const loggedIn = await this.login();
+            if (!loggedIn) return { success: false, msg: 'Login failed' };
+        }
+
+        const delUrl = `${this.baseUrl}/panel/api/inbounds/del/${id}`;
+        console.log(`Deleting inbound ID: ${id}`);
+
+        try {
+            const response = await axios.post(delUrl, {}, {
+                headers: {
+                    'Cookie': this.sessionCookie,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error(`Error deleting inbound ${id}:`, error.message);
+            return { success: false, msg: error.message };
+        }
+    }
+
+    /**
+     * Update an existing inbound configuration
+     * @param {number} id - Inbound ID to update
+     * @param {Object} inboundData - New inbound configuration
+     * @returns {Promise<Object>} Result object
+     */
+    async updateInbound(id, inboundData) {
+        if (!this.sessionCookie) await this.login();
+
+        const updateUrl = `${this.baseUrl}/panel/api/inbounds/update/${id}`;
+        console.log(`Updating inbound ID: ${id}`);
+
+        try {
+            const response = await axios.post(updateUrl, inboundData, {
+                headers: {
+                    'Cookie': this.sessionCookie,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating inbound ${id}:`, error.message);
+            return { success: false, msg: error.message };
+        }
+    }
 }
 
 module.exports = new PanelAPI();

@@ -73,15 +73,32 @@ class TelegramBot {
     buildTrialVlessLink(uuid, firstName = 'user') {
         const host = process.env.VLESS_HOST;
         const port = process.env.VLESS_PORT || '443';
-        const fp = process.env.VLESS_FP || 'chrome';
-        const sni = encodeURIComponent(process.env.VLESS_SNI || 'github.com');
-        const pbk = encodeURIComponent(process.env.VLESS_PBK || '');
-        const sid = encodeURIComponent(process.env.VLESS_SID || '');
-        const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
-        const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
-        const tag = encodeURIComponent(process.env.VLESS_TAG || 'portal-portalvpn');
+        const type = process.env.VLESS_TYPE || 'tcp';
+        const security = process.env.VLESS_SECURITY || 'reality';
+        const remark = encodeURIComponent(process.env.VLESS_REMARK || 'PortalVPN');
 
-        return `vless://${uuid}@${host}:${port}?type=tcp&security=reality&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}#${tag}`;
+        let params = `type=${type}&security=${security}`;
+
+        if (security === 'reality') {
+            const pbk = encodeURIComponent(process.env.VLESS_PBK || '');
+            const fp = process.env.VLESS_FP || 'chrome';
+            const sni = encodeURIComponent(process.env.VLESS_SNI || 'github.com');
+            const sid = encodeURIComponent(process.env.VLESS_SID || '');
+            const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
+            const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
+            params += `&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}`;
+        }
+
+        if (type === 'ws') {
+            const path = encodeURIComponent(process.env.VLESS_PATH || '/');
+            const hostHeader = encodeURIComponent(process.env.VLESS_WS_HOST || '');
+            params += `&path=${path}&host=${hostHeader}`;
+        }
+
+        // Add encryption=none for wide compatibility
+        params += '&encryption=none';
+
+        return `vless://${uuid}@${host}:${port}?${params}#${remark}`;
     }
 
     buildSubscriptionLink(subId) {
@@ -225,10 +242,15 @@ ${subscriptionLine}
                 const mainKeyboard = Markup.inlineKeyboard(buttons);
 
                 if (fs.existsSync(this.bannerPath)) {
-                    await ctx.replyWithPhoto(
-                        { source: fs.createReadStream(this.bannerPath) },
-                        { caption: welcomeMessage, parse_mode: 'Markdown', ...mainKeyboard }
-                    );
+                    try {
+                        await ctx.replyWithPhoto(
+                            { source: this.bannerPath },
+                            { caption: welcomeMessage, parse_mode: 'Markdown', ...mainKeyboard }
+                        );
+                    } catch (photoErr) {
+                        console.error('Failed to send welcome photo, falling back to text:', photoErr.message);
+                        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown', ...mainKeyboard });
+                    }
                 } else {
                     await ctx.reply(welcomeMessage, { parse_mode: 'Markdown', ...mainKeyboard });
                 }
