@@ -116,18 +116,6 @@ class TelegramBot {
         return `vless://${uuid}@${host}:${port}?${params}#${remark}`;
     }
 
-    buildSubscriptionLink(subId) {
-        if (!subId) return null;
-        let baseUrl = process.env.PANEL_URL || '';
-        baseUrl = baseUrl.replace(/\/$/, '');
-        if (baseUrl.endsWith('/panel')) {
-            baseUrl = baseUrl.slice(0, -6);
-        }
-        return `${baseUrl}/sub/${subId}`;
-    }
-
-
-
     async sendTrialExpiryReminders() {
         const now = new Date();
         const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -223,12 +211,10 @@ class TelegramBot {
 
                 const isActive = user && user.keyExpiry && new Date() <= user.keyExpiry;
                 const vlessLink = (isActive && user.uuid) ? this.buildTrialVlessLink(user.uuid, user.firstName || 'user') : null;
-                const subLink = (isActive && user.subId) ? this.buildSubscriptionLink(user.subId) : null;
 
                 let subscriptionLine = '📢 У вас еще нет активной подписки, но вы ее можете оформить по кнопке снизу.';
                 if (isActive) {
                     subscriptionLine = `🤑 *Ваша подписка:*\n\n` +
-                        `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                         `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\``;
                 }
 
@@ -722,14 +708,12 @@ ${subscriptionLine}
                         await payment.save();
 
                         const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
-                        const subLink = user.subId ? this.buildSubscriptionLink(user.subId) : null;
 
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
                             `🎉 *Оплата подтверждена!*\n\n` +
                             `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
                             `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
-                            `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                             `🔑 *Ваш ключ (VLESS):*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
                             { parse_mode: 'Markdown' }
@@ -1103,14 +1087,12 @@ ${subscriptionLine}
                         await user.save();
 
                         const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
-                        const subLink = user.subId ? this.buildSubscriptionLink(user.subId) : null;
 
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
                             `🎉 *Оплата прошла успешно!*\n\n` +
                             `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
                             `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
-                            `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                             `🔑 *Ваш ключ доступа:*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}\n\n` +
                             `*Как подключиться:*\n` +
