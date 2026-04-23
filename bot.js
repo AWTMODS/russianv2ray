@@ -388,7 +388,7 @@ ${subscriptionLine}
                 });
 
                 const vlessLink = this.buildTrialVlessLink(uuid, ctx.from.first_name);
-                const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить PortalVPN:*\nИнструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\nДоступ активен: *72 часа.* ⚡️`;
+                const message = `🔑 Ваш ключ доступа готов:\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\nКак запустить PortalVPN:\nИснтрукция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\nДоступ активен: 72 часа. ⚡️`;
 
                 await ctx.reply(message, {
                     parse_mode: 'Markdown',
@@ -711,11 +711,11 @@ ${subscriptionLine}
 
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
-                            `🎉 *Оплата подтверждена!*\n\n` +
-                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
-                            `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
-                            `🔑 *Ваш ключ (VLESS):*\n\`${vlessLink}\`\n\n` +
-                            `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
+                            `🎉 Оплата подтверждена!\n\n` +
+                            `💎 Premium активирован на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
+                            `Иснтрукция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
+                            `🔑 Ваш ключ:\n\`${vlessLink}\`\n\n` +
+                            `📅 Действует до: ${user.keyExpiry.toLocaleString('ru-RU')}`,
                             { parse_mode: 'Markdown' }
                         );
 
@@ -1090,16 +1090,11 @@ ${subscriptionLine}
 
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
-                            `🎉 *Оплата прошла успешно!*\n\n` +
-                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
-                            `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
-                            `🔑 *Ваш ключ доступа:*\n\`${vlessLink}\`\n\n` +
-                            `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}\n\n` +
-                            `*Как подключиться:*\n` +
-                            `1. Скачайте приложение V2RayTun или Happ\n` +
-                            `2. Скопируйте ключ выше\n` +
-                            `3. Импортируйте ключ в приложение\n` +
-                            `4. Подключитесь к VPN`,
+                            `🎉 Оплата подтверждена!\n\n` +
+                            `💎 Premium активирован на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
+                            `Иснтрукция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
+                            `🔑 Ваш ключ:\n\`${vlessLink}\`\n\n` +
+                            `📅 Действует до: ${user.keyExpiry.toLocaleString('ru-RU')}`,
                             { parse_mode: 'Markdown' }
                         );
 
