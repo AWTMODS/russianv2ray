@@ -319,7 +319,10 @@ ${subscriptionLine}
                 if (isActive && user.uuid) {
                     const vlessLink = this.buildTrialVlessLink(user.uuid, ctx.from.first_name);
                     await ctx.reply(
-                        `✅ *Ваш доступ активен.*\n\n🔑 Ключ:\n\`${vlessLink}\`\n\n📅 Истекает: ${user.keyExpiry.toLocaleString('ru-RU')}`,
+                        `✅ Ваш доступ активен.\n\n` +
+                        `🔑 Ваш ключ:\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n` +
+                        `Как запустить PortalVPN:\nИснтрукция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
+                        `📅 Истекает: ${user.keyExpiry.toLocaleString('ru-RU')}`,
                         {
                             parse_mode: 'Markdown',
                             ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
