@@ -86,7 +86,8 @@ class TelegramBot {
             const sid = encodeURIComponent(process.env.VLESS_SID || '');
             const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
             const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
-            params += `&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}`;
+            const alpn = encodeURIComponent(process.env.VLESS_ALPN || 'h2,http/1.1');
+            params += `&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}&alpn=${alpn}`;
         }
 
         if (type === 'ws') {
@@ -389,7 +390,7 @@ ${subscriptionLine}
                 });
 
                 const vlessLink = this.buildTrialVlessLink(uuid, ctx.from.first_name);
-                const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить Portal:*\n1. Скачайте приложение *V2RayTun* (или Happ) из маркета.\n2. Скопируйте ключ выше.\n3. В приложении нажмите «+» или «Import» и выберите «Import from Clipboard».\n4. Нажмите на кнопку подключения.\n\nДоступ активен: *72 часа.* ⚡️`;
+                const message = `🔑 *Ваш ключ доступа готов:*\n\`${vlessLink}\`\n(нажмите на код, чтобы скопировать)\n\n*Как запустить PortalVPN:*\nИнструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\nДоступ активен: *72 часа.* ⚡️`;
 
                 await ctx.reply(message, {
                     parse_mode: 'Markdown',
@@ -714,7 +715,8 @@ ${subscriptionLine}
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
                             `🎉 *Оплата подтверждена!*\n\n` +
-                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n\n` +
+                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
+                            `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
                             `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                             `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
@@ -1093,7 +1095,8 @@ ${subscriptionLine}
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
                             `🎉 *Оплата прошла успешно!*\n\n` +
-                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n\n` +
+                            `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
+                            `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
                             `🔑 *Ваш ключ доступа:*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}\n\n` +
                             `*Как подключиться:*\n` +
