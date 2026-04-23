@@ -11,9 +11,23 @@ const api = require('./api');
 const { User, Payment, connectDB } = require('./db');
 const platega = require('./platega');
 
+// Proxy support for Russian VPS (Telegram is blocked)
+let telegramAgent = null;
+if (process.env.PROXY_URL) {
+    try {
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        telegramAgent = new HttpsProxyAgent(process.env.PROXY_URL);
+        console.log(`🌐 Using proxy: ${process.env.PROXY_URL}`);
+    } catch (e) {
+        console.warn('⚠️  https-proxy-agent not installed. Run: npm install https-proxy-agent');
+    }
+}
+
 class TelegramBot {
     constructor() {
-        this.bot = new Telegraf(process.env.BOT_TOKEN);
+        this.bot = new Telegraf(process.env.BOT_TOKEN, {
+            telegram: telegramAgent ? { agent: telegramAgent } : {}
+        });
         this.app = express();
         this.webhookPort = process.env.WEBHOOK_PORT || 3000;
         this.pendingBroadcasts = new Map();
@@ -104,14 +118,12 @@ class TelegramBot {
 
     buildSubscriptionLink(subId) {
         if (!subId) return null;
-        const baseUrl = process.env.SUB_BASE_URL || 'https://sub.bearvpn.win/';
-        try {
-            const url = new URL(baseUrl);
-            url.pathname = path.join(url.pathname, subId).replace(/\\/g, '/');
-            return url.toString();
-        } catch (e) {
-            return `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${subId}`;
+        let baseUrl = process.env.PANEL_URL || '';
+        baseUrl = baseUrl.replace(/\/$/, '');
+        if (baseUrl.endsWith('/panel')) {
+            baseUrl = baseUrl.slice(0, -6);
         }
+        return `${baseUrl}/sub/${subId}`;
     }
 
 
@@ -718,7 +730,7 @@ ${subscriptionLine}
                             `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
                             `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
                             `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
-                            `🔑 *Ключ для ручной настройки (VLESS):*\n\`${vlessLink}\`\n\n` +
+                            `🔑 *Ваш ключ (VLESS):*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}`,
                             { parse_mode: 'Markdown' }
                         );
@@ -1091,12 +1103,14 @@ ${subscriptionLine}
                         await user.save();
 
                         const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        const subLink = user.subId ? this.buildSubscriptionLink(user.subId) : null;
 
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
                             `🎉 *Оплата прошла успешно!*\n\n` +
                             `💎 *Premium активирован* на ${payment.subscriptionMonths} ${payment.subscriptionMonths === 1 ? 'месяц' : payment.subscriptionMonths < 5 ? 'месяца' : 'месяцев'}\n` +
                             `Инструкция - https://teletype.in/@portalsvpnbot/wonDJyFfsfgaF\n\n` +
+                            `🔗 *Ссылка для приложений (V2Ray/Neko):*\n\`${subLink}\`\n\n` +
                             `🔑 *Ваш ключ доступа:*\n\`${vlessLink}\`\n\n` +
                             `📅 *Действует до:* ${user.keyExpiry.toLocaleString('ru-RU')}\n\n` +
                             `*Как подключиться:*\n` +
