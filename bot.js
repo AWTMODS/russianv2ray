@@ -128,17 +128,17 @@ class TelegramBot {
 
         // 1. Remind 24 hours before expiry
         const expiringUsers = await User.find({
-            subscriptionStatus: 'trial',
-            trialUsed: true,
+            subscriptionStatus: { $in: ['trial', 'premium'] },
             keyExpiry: { $gt: now, $lte: in24h },
             trialExpiryReminderSent: { $ne: true }
         });
 
         for (const user of expiringUsers) {
             try {
+                const planName = user.subscriptionStatus === 'premium' ? 'Premium подписка' : 'пробный период';
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
-                    '⏰ *Напоминание*\n\nЧерез 24 часа ваш пробный период истекает.\nУспейте продлить подписку, чтобы не потерять доступ!',
+                    `⏰ *Напоминание*\n\nЧерез 24 часа ваш ${planName} истекает.\nУспейте продлить подписку, чтобы не потерять доступ!`,
                     {
                         parse_mode: 'Markdown',
                         ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
@@ -147,23 +147,23 @@ class TelegramBot {
                 user.trialExpiryReminderSent = true;
                 await user.save();
             } catch (e) {
-                console.error('[trial_reminder] failed:', user.telegramId, e.message);
+                console.error('[expiry_reminder] failed:', user.telegramId, e.message);
             }
         }
 
         // 2. Remind on exact expiry
         const expiredUsers = await User.find({
-            subscriptionStatus: 'trial',
-            trialUsed: true,
+            subscriptionStatus: { $in: ['trial', 'premium'] },
             keyExpiry: { $lte: now },
             trialExpiredReminderSent: { $ne: true }
         });
 
         for (const user of expiredUsers) {
             try {
+                const planName = user.subscriptionStatus === 'premium' ? 'Ваша Premium подписка истекла' : 'Ваш пробный период истек';
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
-                    '⚠️ *Ваш пробный период истек.*\n\nПродлите подписку, чтобы продолжить использование без ограничений!',
+                    `⚠️ *${planName}.*\n\nПродлите подписку, чтобы продолжить использование без ограничений!`,
                     {
                         parse_mode: 'Markdown',
                         ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
@@ -709,6 +709,8 @@ ${subscriptionLine}
                             user.subscriptionStatus = 'premium';
                             user.keyExpiry = new Date(newExpiry);
                             user.lastPaymentStatus = 'success';
+                            user.trialExpiryReminderSent = false;
+                            user.trialExpiredReminderSent = false;
                             if (!user.subId) user.subId = subId;
                             await user.save();
                             vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
@@ -731,6 +733,8 @@ ${subscriptionLine}
                             user.email = newEmail;
                             user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
                             user.lastPaymentStatus = 'success';
+                            user.trialExpiryReminderSent = false;
+                            user.trialExpiredReminderSent = false;
                             if (!user.subId) user.subId = subId;
                             await user.save();
                             vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
@@ -1123,6 +1127,8 @@ ${subscriptionLine}
                         if (result && result.success) {
                             user.subscriptionStatus = 'premium';
                             user.keyExpiry = new Date(newExpiry);
+                            user.trialExpiryReminderSent = false;
+                            user.trialExpiredReminderSent = false;
                             if (!user.subId) user.subId = subId;
                             await user.save();
                             vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
@@ -1144,6 +1150,8 @@ ${subscriptionLine}
                             user.uuid = newUuid;
                             user.email = newEmail;
                             user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
+                            user.trialExpiryReminderSent = false;
+                            user.trialExpiredReminderSent = false;
                             if (!user.subId) user.subId = subId;
                             await user.save();
                             vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
