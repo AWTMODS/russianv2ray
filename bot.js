@@ -91,7 +91,7 @@ class TelegramBot {
         const security = process.env.VLESS_SECURITY || 'reality';
         const remark = encodeURIComponent(process.env.VLESS_REMARK || 'PortalVPN');
 
-        let params = `type=${type}&security=${security}`;
+        let params = `type=${type}&encryption=none&security=${security}`;
 
         if (security === 'reality') {
             const pbk = encodeURIComponent(process.env.VLESS_PBK || '');
@@ -117,11 +117,6 @@ class TelegramBot {
             const path = encodeURIComponent(process.env.VLESS_PATH || '/');
             const hostHeader = encodeURIComponent(process.env.VLESS_WS_HOST || '');
             params += `&path=${path}&host=${hostHeader}`;
-        }
-
-        // Add encryption=none for wide compatibility
-        if (!params.includes('encryption=')) {
-            params += '&encryption=none';
         }
 
         return `vless://${uuid}@${host}:${port}?${params}#${remark}`;
