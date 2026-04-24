@@ -23,6 +23,14 @@ class PanelAPI {
         return baseUrl;
     }
 
+    /**
+     * Get flow value for panel (converts 'none' to empty string)
+     */
+    getPanelFlow() {
+        const flow = process.env.VLESS_FLOW || 'xtls-rprx-vision';
+        return flow.toLowerCase() === 'none' ? '' : flow;
+    }
+
 
     /**
      * Login to 3X-UI panel
@@ -76,7 +84,7 @@ class PanelAPI {
                 clients: [{
                     id: user.uuid,
                     email: user.email,
-                    flow: process.env.VLESS_FLOW || 'xtls-rprx-vision',
+                    flow: this.getPanelFlow(),
                     limitIp: 0,
                     totalGB: 0,
                     expiryTime: expiryTime,
@@ -131,7 +139,7 @@ class PanelAPI {
                     clients: [{
                         id: uuid,
                         email: email,
-                        flow: process.env.VLESS_FLOW || 'xtls-rprx-vision',
+                        flow: this.getPanelFlow(),
                         expiryTime: newExpiryTime,
                         enable: true,
                         limitIp: 0,
