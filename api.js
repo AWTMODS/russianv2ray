@@ -121,7 +121,7 @@ class PanelAPI {
      * @param {number} newExpiryTime - New expiry timestamp
      * @returns {Promise<Object>} Result object
      */
-    async updateClientExpiry(inboundId, email, uuid, newExpiryTime) {
+    async updateClientExpiry(inboundId, email, uuid, newExpiryTime, subId = '') {
         if (!this.sessionCookie) await this.login();
 
         try {
@@ -136,6 +136,8 @@ class PanelAPI {
                         enable: true,
                         limitIp: 0,
                         totalGB: 0,
+                        tgId: '',
+                        subId: subId
                     }]
                 })
             };

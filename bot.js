@@ -349,15 +349,17 @@ ${subscriptionLine}
             const uuid = uuidv4();
             const email = `trial_${ctx.from.id}_${Date.now()}`;
             const expiryTime = Date.now() + (72 * 60 * 60 * 1000); // 72 hours
+            let subId = user && user.subId ? user.subId : crypto.randomBytes(8).toString('hex');
 
             this.logStep(traceId, 'Creating trial client in panel', {
                 uuid,
                 email,
-                expiryTime
+                expiryTime,
+                subId
             });
 
             const result = await api.addClient(
-                { uuid, email, flow: 'xtls-rprx-vision' },
+                { uuid, email, flow: 'xtls-rprx-vision', subId },
                 parseInt(process.env.TRIAL_INBOUND_ID, 10),
                 expiryTime
             );
@@ -370,8 +372,11 @@ ${subscriptionLine}
                         telegramId: ctx.from.id.toString(),
                         username: ctx.from.username,
                         firstName: ctx.from.first_name,
-                        lastName: ctx.from.last_name
+                        lastName: ctx.from.last_name,
+                        subId: subId
                     });
+                } else if (!user.subId) {
+                    user.subId = subId;
                 }
 
                 user.trialUsed = true;
@@ -681,27 +686,54 @@ ${subscriptionLine}
                     });
 
                     const days = payment.subscriptionMonths * 30;
-                    const newExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-                    const newUuid = uuidv4();
-                    const newEmail = `premium_${user.telegramId}_${Date.now()}`;
+                    const additionalMs = days * 24 * 60 * 60 * 1000;
+                    const newExpiry = (user.keyExpiry && user.keyExpiry.getTime() > Date.now()) 
+                        ? user.keyExpiry.getTime() + additionalMs 
+                        : Date.now() + additionalMs;
 
-                    const result = await api.addClient(
-                        { uuid: newUuid, email: newEmail, flow: 'xtls-rprx-vision' },
-                        parseInt(process.env.PREMIUM_INBOUND_ID, 10),
-                        newExpiry
-                    );
+                    let result;
+                    let vlessLink;
+                    let subId = user.subId || crypto.randomBytes(8).toString('hex');
 
-                    this.logStep(traceId, 'Manual addClient result', { result });
+                    if (user.uuid && user.inboundId) {
+                        this.logStep(traceId, 'Manual success -> renewing existing key', { transactionId, userId: user.telegramId });
+                        result = await api.updateClientExpiry(user.inboundId, user.email, user.uuid, newExpiry, subId);
+                        
+                        if (result && result.success) {
+                            user.subscriptionStatus = 'premium';
+                            user.keyExpiry = new Date(newExpiry);
+                            user.lastPaymentStatus = 'success';
+                            if (!user.subId) user.subId = subId;
+                            await user.save();
+                            vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
+                        }
+                    } else {
+                        this.logStep(traceId, 'Manual success -> activating new premium key', { transactionId, userId: user.telegramId });
+                        const newUuid = uuidv4();
+                        const newEmail = `premium_${user.telegramId}_${Date.now()}`;
 
-                    if (result.success) {
-                        user.subscriptionStatus = 'premium';
-                        user.keyExpiry = new Date(newExpiry);
-                        user.uuid = newUuid;
-                        user.email = newEmail;
-                        user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
-                        user.lastPaymentStatus = 'success';
-                        await user.save();
+                        result = await api.addClient(
+                            { uuid: newUuid, email: newEmail, flow: process.env.VLESS_FLOW || 'xtls-rprx-vision', subId },
+                            parseInt(process.env.PREMIUM_INBOUND_ID, 10),
+                            newExpiry
+                        );
 
+                        if (result && result.success) {
+                            user.subscriptionStatus = 'premium';
+                            user.keyExpiry = new Date(newExpiry);
+                            user.uuid = newUuid;
+                            user.email = newEmail;
+                            user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
+                            user.lastPaymentStatus = 'success';
+                            if (!user.subId) user.subId = subId;
+                            await user.save();
+                            vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        }
+                    }
+
+                    this.logStep(traceId, 'Manual addClient/updateClient result', { result });
+
+                    if (result && result.success) {
                         payment.metadata = {
                             ...(payment.metadata || {}),
                             keyIssued: true,
@@ -710,7 +742,7 @@ ${subscriptionLine}
                         };
                         await payment.save();
 
-                        const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        vlessLink = vlessLink || this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
 
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
@@ -1069,27 +1101,53 @@ ${subscriptionLine}
                     });
 
                     const days = payment.subscriptionMonths * 30;
-                    const newExpiry = Date.now() + (days * 24 * 60 * 60 * 1000);
-                    const newUuid = uuidv4();
-                    const newEmail = `premium_${effectiveUserId}_${Date.now()}`;
+                    const additionalMs = days * 24 * 60 * 60 * 1000;
+                    const newExpiry = (user.keyExpiry && user.keyExpiry.getTime() > Date.now()) 
+                        ? user.keyExpiry.getTime() + additionalMs 
+                        : Date.now() + additionalMs;
 
-                    const result = await api.addClient(
-                        { uuid: newUuid, email: newEmail, flow: 'xtls-rprx-vision' },
-                        parseInt(process.env.PREMIUM_INBOUND_ID, 10),
-                        newExpiry
-                    );
+                    let result;
+                    let vlessLink;
+                    let subId = user.subId || crypto.randomBytes(8).toString('hex');
 
-                    this.logStep(traceId, 'Panel addClient response', { result });
+                    if (user.uuid && user.inboundId) {
+                        this.logStep(traceId, 'Webhook success -> renewing existing key', { userId: effectiveUserId });
+                        result = await api.updateClientExpiry(user.inboundId, user.email, user.uuid, newExpiry, subId);
 
-                    if (result.success) {
-                        user.subscriptionStatus = 'premium';
-                        user.keyExpiry = new Date(newExpiry);
-                        user.uuid = newUuid;
-                        user.email = newEmail;
-                        user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
-                        await user.save();
+                        if (result && result.success) {
+                            user.subscriptionStatus = 'premium';
+                            user.keyExpiry = new Date(newExpiry);
+                            if (!user.subId) user.subId = subId;
+                            await user.save();
+                            vlessLink = this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
+                        }
+                    } else {
+                        this.logStep(traceId, 'Webhook success -> activating new premium key', { userId: effectiveUserId });
+                        const newUuid = uuidv4();
+                        const newEmail = `premium_${effectiveUserId}_${Date.now()}`;
 
-                        const vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        result = await api.addClient(
+                            { uuid: newUuid, email: newEmail, flow: process.env.VLESS_FLOW || 'xtls-rprx-vision', subId },
+                            parseInt(process.env.PREMIUM_INBOUND_ID, 10),
+                            newExpiry
+                        );
+
+                        if (result && result.success) {
+                            user.subscriptionStatus = 'premium';
+                            user.keyExpiry = new Date(newExpiry);
+                            user.uuid = newUuid;
+                            user.email = newEmail;
+                            user.inboundId = parseInt(process.env.PREMIUM_INBOUND_ID, 10);
+                            if (!user.subId) user.subId = subId;
+                            await user.save();
+                            vlessLink = this.buildTrialVlessLink(newUuid, user.firstName || 'User');
+                        }
+                    }
+
+                    this.logStep(traceId, 'Panel operation response', { result });
+
+                    if (result && result.success) {
+                        vlessLink = vlessLink || this.buildTrialVlessLink(user.uuid, user.firstName || 'User');
 
                         await this.bot.telegram.sendMessage(
                             effectiveUserId,
