@@ -99,9 +99,18 @@ class TelegramBot {
             const sni = encodeURIComponent(process.env.VLESS_SNI || 'github.com');
             const sid = encodeURIComponent(process.env.VLESS_SID || '');
             const spx = encodeURIComponent(process.env.VLESS_SPX || '/');
-            const flow = encodeURIComponent(process.env.VLESS_FLOW || 'xtls-rprx-vision');
-            const alpn = encodeURIComponent(process.env.VLESS_ALPN || 'h2,http/1.1');
-            params += `&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}&flow=${flow}&alpn=${alpn}`;
+            
+            params += `&pbk=${pbk}&fp=${fp}&sni=${sni}&sid=${sid}&spx=${spx}`;
+
+            const flow = process.env.VLESS_FLOW;
+            if (flow && flow.toLowerCase() !== 'none') {
+                params += `&flow=${encodeURIComponent(flow)}`;
+            }
+
+            const alpn = process.env.VLESS_ALPN;
+            if (alpn && alpn.toLowerCase() !== 'none') {
+                params += `&alpn=${encodeURIComponent(alpn)}`;
+            }
         }
 
         if (type === 'ws') {
@@ -111,7 +120,9 @@ class TelegramBot {
         }
 
         // Add encryption=none for wide compatibility
-        params += '&encryption=none';
+        if (!params.includes('encryption=')) {
+            params += '&encryption=none';
+        }
 
         return `vless://${uuid}@${host}:${port}?${params}#${remark}`;
     }
