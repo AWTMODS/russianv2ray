@@ -133,22 +133,32 @@ class TelegramBot {
             trialExpiryReminderSent: { $ne: true }
         });
 
+        if (expiringUsers.length > 0) {
+            console.log(`[Reminders] Found ${expiringUsers.length} users expiring soon.`);
+        }
+
         for (const user of expiringUsers) {
             try {
                 const planName = user.subscriptionStatus === 'premium' ? 'Premium подписка' : 'пробный период';
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
-                    `⏰ *Напоминание*\n\nЧерез 24 часа ваш ${planName} истекает.\nУспейте продлить подписку, чтобы не потерять доступ!`,
+                    `⏰ *Срок действия почти истек*\n\nВаш ${planName} заканчивается через 24 часа. \n\nПродлите подписку сейчас, чтобы не прерывать безопасный доступ к сети! 🛡`,
                     {
                         parse_mode: 'Markdown',
-                        ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                        ...Markup.inlineKeyboard([[Markup.button.callback('🛒 Купить VPN', 'buy_premium')]])
                     }
                 );
                 user.trialExpiryReminderSent = true;
                 await user.save();
             } catch (e) {
                 console.error('[expiry_reminder] failed:', user.telegramId, e.message);
+                if (e.message.includes('blocked') || e.message.includes('deactivated')) {
+                    user.trialExpiryReminderSent = true;
+                    await user.save();
+                }
             }
+            // Small delay to avoid rate limits
+            await new Promise(r => setTimeout(r, 100));
         }
 
         // 2. Remind on exact expiry
@@ -158,28 +168,38 @@ class TelegramBot {
             trialExpiredReminderSent: { $ne: true }
         });
 
+        if (expiredUsers.length > 0) {
+            console.log(`[Reminders] Found ${expiredUsers.length} users with expired keys.`);
+        }
+
         for (const user of expiredUsers) {
             try {
                 const planName = user.subscriptionStatus === 'premium' ? 'Ваша Premium подписка истекла' : 'Ваш пробный период истек';
                 await this.bot.telegram.sendMessage(
                     user.telegramId,
-                    `⚠️ *${planName}.*\n\nПродлите подписку, чтобы продолжить использование без ограничений!`,
+                    `🔴 *Доступ ограничен*\n\n${planName}.\n\nЧтобы продолжить пользоваться Portal VPN, выберите подходящий тариф ниже:`,
                     {
                         parse_mode: 'Markdown',
-                        ...Markup.inlineKeyboard([[Markup.button.callback('💎 Купить Premium', 'buy_premium')]])
+                        ...Markup.inlineKeyboard([[Markup.button.callback('🛒 Купить VPN', 'buy_premium')]])
                     }
                 );
                 user.trialExpiredReminderSent = true;
                 await user.save();
             } catch (e) {
                 console.error('[trial_expired_reminder] failed:', user.telegramId, e.message);
+                if (e.message.includes('blocked') || e.message.includes('deactivated')) {
+                    user.trialExpiredReminderSent = true;
+                    await user.save();
+                }
             }
+            // Small delay to avoid rate limits
+            await new Promise(r => setTimeout(r, 100));
         }
     }
 
     startTrialReminderJob() {
         this.sendTrialExpiryReminders().catch(console.error);
-        setInterval(() => this.sendTrialExpiryReminders().catch(console.error), 60 * 60 * 1000);
+        setInterval(() => this.sendTrialExpiryReminders().catch(console.error), 15 * 60 * 1000);
     }
 
     setupHandlers() {
@@ -774,10 +794,16 @@ ${subscriptionLine}
                                 console.error(`[${traceId}] Failed to reward referrer for ${user.telegramId}:`, err);
                             });
                         }
-                    } else {
+                    } else if (result) {
                         await this.bot.telegram.sendMessage(
                             user.telegramId,
                             '⚠️ Оплата подтверждена, но не удалось выдать ключ. Напишите в поддержку.'
+                        );
+                    } else {
+                        // Key was already issued, we just want to tell the user it's all good
+                        await this.bot.telegram.sendMessage(
+                            user.telegramId,
+                            '✅ Оплата подтверждена, подписка уже активна!'
                         );
                     }
                 }
@@ -1296,8 +1322,11 @@ ${subscriptionLine}
             });
 
             console.log('\n🤖 Launching Telegram bot...');
-            await this.bot.launch();
             this.startTrialReminderJob();
+            
+            // Delete webhook before launch to avoid 409 conflict if it was previously set
+            await this.bot.telegram.deleteWebhook().catch(() => {});
+            await this.bot.launch();
 
             console.log('✅ Bot started successfully!');
             console.log('\n✨ Bot is ready to accept commands!\n');
